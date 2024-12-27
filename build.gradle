@@ -237,8 +237,9 @@ opensearchplugin {
     classname "${projectPath}.${pathToPlugin}.${pluginClassName}"
     licenseFile rootProject.file('LICENSE')
     noticeFile rootProject.file('NOTICE')
-    extendedPlugins = ['opensearch-knn', 'opensearch-ml']
+    extendedPlugins = ['opensearch-knn']
 }
+
 
 dependencyLicenses.enabled = false
 thirdPartyAudit.enabled = false
