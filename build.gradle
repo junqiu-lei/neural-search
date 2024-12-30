@@ -253,15 +253,15 @@ def knnJarDirectory = "$buildDir/dependencies/opensearch-knn"
 dependencies {
     api "org.opensearch:opensearch:${opensearch_version}"
     zipArchive group: 'org.opensearch.plugin', name:'opensearch-knn', version: "${opensearch_build}"
-    zipArchive group: 'org.opensearch.plugin', name:'opensearch-ml-plugin', version: "${opensearch_build}" {
-        exclude group: 'org.ow2.asm', module: 'asm'
-    }
+//    zipArchive group: 'org.opensearch.plugin', name:'opensearch-ml-plugin', version: "${opensearch_build}" {
+//        exclude group: 'org.ow2.asm', module: 'asm'
+//    }
 //    zipArchive(group: 'org.opensearch.plugin', name: 'opensearch-knn', version: "${opensearch_build}") {
 //        exclude group: 'com.google.guava', module: 'guava'
 //    }
-//    zipArchive(group: 'org.opensearch.plugin', name: 'opensearch-ml-plugin', version: "${opensearch_build}") {
-//        exclude group: 'com.google.guava', module: 'guava'
-//    }
+    zipArchive(group: 'org.opensearch.plugin', name: 'opensearch-ml-plugin', version: "${opensearch_build}") {
+        exclude group: 'org.ow2.asm', module: 'asm'
+    }
     secureIntegTestPluginArchive group: 'org.opensearch.plugin', name:'opensearch-security', version: "${opensearch_build}"
     compileOnly fileTree(dir: knnJarDirectory, include: "opensearch-knn-${opensearch_build}.jar")
 //    compileOnly group: 'com.google.guava', name: 'guava', version:'32.1.3-jre'
