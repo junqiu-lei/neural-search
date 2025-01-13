@@ -26,7 +26,8 @@
           "nested_passages": {
             "text": "embedding"
           }
-        }
+        },
+        "ignore_failure": false
       }
     }
   ]

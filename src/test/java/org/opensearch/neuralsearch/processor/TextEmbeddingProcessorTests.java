@@ -6,10 +6,13 @@ package org.opensearch.neuralsearch.processor;
 
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.isNull;
@@ -39,6 +42,7 @@ import org.opensearch.OpenSearchParseException;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.rest.RestStatus;
 import org.opensearch.env.Environment;
 import org.opensearch.index.mapper.IndexFieldMapper;
 import org.opensearch.ingest.AbstractBatchingProcessor;
@@ -47,6 +51,7 @@ import org.opensearch.ingest.IngestDocumentWrapper;
 import org.opensearch.ingest.Processor;
 import org.opensearch.neuralsearch.ml.MLCommonsClientAccessor;
 import org.opensearch.neuralsearch.processor.factory.TextEmbeddingProcessorFactory;
+import org.opensearch.OpenSearchStatusException;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -1189,6 +1194,82 @@ public class TextEmbeddingProcessorTests extends InferenceProcessorTestCase {
         Map<String, Object> actualMapLevel1 = (Map<String, Object>) resultAsTree.get("nestedField");
         assertEquals(1, actualMapLevel1.size());
         assertEquals(Map.of("vectorField", "vectorField"), actualMapLevel1.get("nestedField"));
+    }
+
+    public void testExecute_inferenceThrowsRemoteConnectorThrottlingException() {
+        // 1) Prepare an IngestDocument with minimal fields
+        Map<String, Object> sourceAndMetadata = new HashMap<>();
+        sourceAndMetadata.put(IndexFieldMapper.NAME, "my_index");
+        sourceAndMetadata.put("key1", "This text will be embedded");
+        IngestDocument ingestDocument = new IngestDocument(sourceAndMetadata, new HashMap<>());
+
+        // 2) Create the processor as usual (using one of your existing helper methods)
+        TextEmbeddingProcessor processor = createInstanceWithLevel1MapConfig();
+
+        // 3) Mock mlCommonsClientAccessor to simulate a 429 (RemoteConnectorThrottlingException)
+        doAnswer(invocation -> {
+            ActionListener<List<List<Float>>> listener = invocation.getArgument(2);
+            // Instead of returning a normal response, invoke onFailure with a throttling exception
+            listener.onFailure(new OpenSearchStatusException("Remote server returned error code: 429", RestStatus.TOO_MANY_REQUESTS));
+            return null;
+        }).when(mlCommonsClientAccessor).inferenceSentences(anyString(), anyList(), any(ActionListener.class));
+
+        // 4) Provide a mock BiConsumer for the handler to capture how the processor handles the exception
+        @SuppressWarnings("unchecked")
+        BiConsumer<IngestDocument, Exception> handler = mock(BiConsumer.class);
+
+        // 5) Execute the processor
+        processor.execute(ingestDocument, handler);
+
+        // 6) Verify that the BiConsumer was called with a null IngestDocument and the RemoteConnectorThrottlingException
+        verify(handler).accept(
+            isNull(),
+            argThat(
+                ex -> ex instanceof OpenSearchStatusException
+                    && ((OpenSearchStatusException) ex).status() == RestStatus.TOO_MANY_REQUESTS
+                    && ex.getMessage().contains("429")
+            )
+        );
+    }
+
+    public void testBatchExecute_inferenceThrowsRemoteConnectorThrottlingException() {
+        // 1) Prepare an inference list with at least one "sentence"
+        List<String> inferenceList = Arrays.asList("This text will be embedded 1", "This text will be embedded 2");
+
+        // 2) Create the processor as usual (using a helper method)
+        TextEmbeddingProcessor processor = createInstanceWithLevel1MapConfig();
+
+        // 3) Mock mlCommonsClientAccessor to simulate a 429 (RemoteConnectorThrottlingException-like) exception
+        doAnswer(invocation -> {
+            ActionListener<List<List<Float>>> listener = invocation.getArgument(2);
+            // Instead of returning a normal response, invoke onFailure with a throttling exception
+            listener.onFailure(new OpenSearchStatusException("Remote server returned error code: 429", RestStatus.TOO_MANY_REQUESTS));
+            return null;
+        }).when(mlCommonsClientAccessor).inferenceSentences(anyString(), anyList(), any(ActionListener.class));
+
+        // 4) Create a mock success handler & a mock failure handler for the batch callback
+        @SuppressWarnings("unchecked")
+        Consumer<List<?>> successHandler = mock(Consumer.class);
+
+        @SuppressWarnings("unchecked")
+        Consumer<Exception> failureHandler = mock(Consumer.class);
+
+        // 5) Execute the batch call
+        processor.doBatchExecute(inferenceList, successHandler, failureHandler);
+
+        // 6) Verify successHandler was NEVER called
+        verify(successHandler, never()).accept(any());
+
+        // 7) Verify failureHandler was called with the OpenSearchStatusException (429)
+        ArgumentCaptor<Exception> exceptionCaptor = ArgumentCaptor.forClass(Exception.class);
+        verify(failureHandler, times(1)).accept(exceptionCaptor.capture());
+        Exception capturedException = exceptionCaptor.getValue();
+
+        // 8) Assert that the captured exception is indeed the 429 we simulated
+        assertTrue(capturedException instanceof OpenSearchStatusException);
+        OpenSearchStatusException statusEx = (OpenSearchStatusException) capturedException;
+        assertEquals(RestStatus.TOO_MANY_REQUESTS, statusEx.status());
+        assertTrue(statusEx.getMessage().contains("429"));
     }
 
     private void assertMapWithNestedFields(Pair<String, Object> actual, List<String> expectedKeys, Optional<Object> expectedFinalValue) {

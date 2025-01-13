@@ -288,6 +288,52 @@ public class TextEmbeddingProcessorIT extends BaseNeuralSearchIT {
         }
     }
 
+    public void testTextEmbeddingProcessor_withFailureNoSkip() throws Exception {
+        String modelId = null;
+        try {
+            // 1. Setup model and pipeline (similar to other tests)
+            modelId = uploadTextEmbeddingModel();
+            loadModel(modelId);
+            createPipelineProcessor(modelId, PIPELINE_NAME, ProcessorType.TEXT_EMBEDDING);
+            createIndexWithPipeline(INDEX_NAME, "IndexMappings.json", PIPELINE_NAME);
+
+            // 2. Test with batch documents including failures
+            int docCount = 5;
+            Exception exception = expectThrows(
+                Exception.class,
+                () -> ingestBatchDocumentWithBulk(
+                    "batch_",
+                    docCount,
+                    Set.of(2),  // Set document at index 2 to fail
+                    Collections.emptySet()
+                )
+            );
+
+            // 3. Verify the failure
+            assertTrue(exception.getMessage().contains("failed to process"));
+
+            // 4. Verify only documents before the failure were processed
+            assertEquals(2, getDocCount(INDEX_NAME));
+
+            // 5. Verify the successful documents
+            for (int i = 0; i < 2; i++) {
+                String template = List.of(INGEST_DOC1, INGEST_DOC2).get(i % 2);
+                String payload = String.format(LOCALE, template, "success");
+                ingestDocument(payload, String.valueOf(i + 1));
+
+                // Verify the documents match
+                assertEquals(
+                    getDocById(INDEX_NAME, String.valueOf(i + 1)).get("_source"),
+                    getDocById(INDEX_NAME, "batch_" + (i + 1)).get("_source")
+                );
+            }
+
+        } finally {
+            // 6. Cleanup
+            wipeOfTestResources(INDEX_NAME, PIPELINE_NAME, modelId, null);
+        }
+    }
+
     private String uploadTextEmbeddingModel() throws Exception {
         String requestBody = Files.readString(Path.of(classLoader.getResource("processor/UploadModelRequestBody.json").toURI()));
         return registerModelGroupAndUploadModel(requestBody);

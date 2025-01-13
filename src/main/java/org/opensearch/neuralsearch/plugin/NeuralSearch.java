@@ -9,6 +9,7 @@ import static org.opensearch.neuralsearch.settings.NeuralSearchSettings.RERANKER
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,6 +28,7 @@ import org.opensearch.env.NodeEnvironment;
 import org.opensearch.ingest.Processor;
 import org.opensearch.ml.client.MachineLearningNodeClient;
 import org.opensearch.neuralsearch.executors.HybridQueryExecutor;
+import org.opensearch.neuralsearch.highlight.NeuralHighlighter;
 import org.opensearch.neuralsearch.ml.MLCommonsClientAccessor;
 import org.opensearch.neuralsearch.processor.NeuralQueryEnricherProcessor;
 import org.opensearch.neuralsearch.processor.NeuralSparseTwoPhaseProcessor;
@@ -65,6 +67,7 @@ import org.opensearch.plugins.SearchPipelinePlugin;
 import org.opensearch.plugins.SearchPlugin;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.script.ScriptService;
+import org.opensearch.search.fetch.subphase.highlight.Highlighter;
 import org.opensearch.search.pipeline.SearchPhaseResultsProcessor;
 import org.opensearch.search.pipeline.SearchRequestProcessor;
 import org.opensearch.search.pipeline.SearchResponseProcessor;
@@ -103,6 +106,7 @@ public class NeuralSearch extends Plugin implements ActionPlugin, SearchPlugin, 
         NeuralSearchClusterUtil.instance().initialize(clusterService);
         NeuralQueryBuilder.initialize(clientAccessor);
         NeuralSparseQueryBuilder.initialize(clientAccessor);
+        NeuralHighlighter.initialize(clientAccessor);
         HybridQueryExecutor.initialize(threadPool);
         normalizationProcessorWorkflow = new NormalizationProcessorWorkflow(new ScoreNormalizer(), new ScoreCombiner());
         return List.of(clientAccessor);
@@ -124,7 +128,7 @@ public class NeuralSearch extends Plugin implements ActionPlugin, SearchPlugin, 
 
     @Override
     public Map<String, Processor.Factory> getProcessors(Processor.Parameters parameters) {
-        clientAccessor = new MLCommonsClientAccessor(new MachineLearningNodeClient(parameters.client));
+        clientAccessor = new MLCommonsClientAccessor(new MachineLearningNodeClient(parameters.client), parameters.env.settings());
         return Map.of(
             TextEmbeddingProcessor.TYPE,
             new TextEmbeddingProcessorFactory(clientAccessor, parameters.env, parameters.ingestService.getClusterService()),
@@ -203,5 +207,14 @@ public class NeuralSearch extends Plugin implements ActionPlugin, SearchPlugin, 
                 parser -> RerankSearchExtBuilder.parse(parser)
             )
         );
+    }
+
+    /**
+     * Register any custom highlighters for use in highlight queries.
+     */
+    @Override
+    public Map<String, Highlighter> getHighlighters() {
+        // Return a map associating "neural" with your NeuralHighlighter instance
+        return Collections.singletonMap(NeuralHighlighter.NAME, new NeuralHighlighter());
     }
 }

@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.HashMap;
 
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.common.util.CollectionUtils;
@@ -20,6 +21,7 @@ import org.opensearch.ml.common.FunctionName;
 import org.opensearch.ml.common.dataset.MLInputDataset;
 import org.opensearch.ml.common.dataset.TextDocsInputDataSet;
 import org.opensearch.ml.common.dataset.TextSimilarityInputDataSet;
+import org.opensearch.ml.common.dataset.QuestionAnsweringInputDataSet;
 import org.opensearch.ml.common.input.MLInput;
 import org.opensearch.ml.common.output.MLOutput;
 import org.opensearch.ml.common.output.model.ModelResultFilter;
@@ -27,10 +29,15 @@ import org.opensearch.ml.common.output.model.ModelTensor;
 import org.opensearch.ml.common.output.model.ModelTensorOutput;
 import org.opensearch.ml.common.output.model.ModelTensors;
 import org.opensearch.neuralsearch.util.RetryUtil;
+import org.opensearch.OpenSearchException;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.log4j.Log4j2;
+
+import org.opensearch.common.settings.Settings;
 
 /**
  * This class will act as an abstraction on the MLCommons client for accessing the ML Capabilities
@@ -38,8 +45,10 @@ import lombok.extern.log4j.Log4j2;
 @RequiredArgsConstructor
 @Log4j2
 public class MLCommonsClientAccessor {
+    private static final Logger log = LogManager.getLogger(MLCommonsClientAccessor.class);
     private static final List<String> TARGET_RESPONSE_FILTERS = List.of("sentence_embedding");
     private final MachineLearningNodeClient mlClient;
+    private final Settings settings;
 
     /**
      * Wrapper around {@link #inferenceSentences} that expected a single input text and produces a single floating
@@ -298,5 +307,59 @@ public class MLCommonsClientAccessor {
         final ModelResultFilter modelResultFilter = new ModelResultFilter(false, true, targetResponseFilters, null);
         final MLInputDataset inputDataset = new TextDocsInputDataSet(inputText, modelResultFilter);
         return new MLInput(FunctionName.TEXT_EMBEDDING, null, inputDataset);
+    }
+
+    /**
+     * Performs question-answering inference using ML Commons
+     *
+     * @param modelId Model ID to use for inference
+     * @param question The question text
+     * @param context The context text to find answers in
+     * @param listener Listener for async response
+     */
+    public void inferenceQA(String modelId, String question, String context, ActionListener<Map<String, Object>> listener) {
+        try {
+            // Create QA input dataset
+            MLInputDataset inputDataset = QuestionAnsweringInputDataSet.builder().question(question).context(context).build();
+            // Create ML input
+            MLInput mlInput = MLInput.builder().algorithm(FunctionName.QUESTION_ANSWERING).inputDataset(inputDataset).build();
+
+            // Make async inference call
+            mlClient.predict(modelId, mlInput, ActionListener.wrap(output -> {
+                if (!(output instanceof ModelTensorOutput)) {
+                    log.debug("Unexpected output type from ML Commons inference");
+                    log.error("Unexpected output type: {}", output.getClass().getName());
+                    listener.onFailure(new OpenSearchException("Unexpected output type from ML Commons inference"));
+                    return;
+                }
+
+                ModelTensorOutput tensorOutput = (ModelTensorOutput) output;
+                List<ModelTensors> tensorOutputList = tensorOutput.getMlModelOutputs();
+
+                if (CollectionUtils.isEmpty(tensorOutputList)) {
+                    listener.onFailure(new OpenSearchException("Empty response from ML Commons inference"));
+                    return;
+                }
+
+                // Convert tensor output to answer format
+                Map<String, Object> result = new HashMap<>();
+
+                for (ModelTensors tensors : tensorOutputList) {
+                    List<ModelTensor> tensorList = tensors.getMlModelTensors();
+                    for (ModelTensor tensor : tensorList) {
+                        if (tensor.getName().equals("num_spans")) {
+                            result.put("num_spans", tensor.getShape()[0]);
+                        }
+                        if (tensor.getName().equals("labels")) {
+                            result.put("labels", tensor.getData());
+                        }
+                    }
+                }
+                listener.onResponse(result);
+            }, listener::onFailure));
+
+        } catch (Exception e) {
+            listener.onFailure(e);
+        }
     }
 }
