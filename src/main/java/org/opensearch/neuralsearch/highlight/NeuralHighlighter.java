@@ -31,6 +31,9 @@ public class NeuralHighlighter implements Highlighter {
     private static final String MODEL_ID_OPTION = "model";
     private static final String SCORE_THRESHOLD_OPTION = "score_threshold";
     private static final String MAX_SNIPPETS_OPTION = "max_snippets";
+    private static final String MODEL_TYPE_OPTION = "model_type";
+    private static final String MODEL_TYPE_MASHQA = "mashqa";
+    private static final String MODEL_TYPE_MULTISPAN = "multispan";
     private static final float DEFAULT_SCORE_THRESHOLD = 0.5f;
     private static final int DEFAULT_MAX_SNIPPETS = 2;
     private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("[.!?]+\\s+");
@@ -51,12 +54,11 @@ public class NeuralHighlighter implements Highlighter {
     @Override
     public HighlightField highlight(FieldHighlightContext fieldContext) throws IOException {
         try {
-            // Get highlighting options
             Map<String, Object> options = fieldContext.field.fieldOptions().options();
             String modelId = getModelId(options);
+            String modelType = getModelType(options);
             int maxSnippets = getMaxSnippets(options);
 
-            // Get the field text and query
             String fieldText = getFieldText(fieldContext);
             String searchQuery = extractOriginalQuery(fieldContext.query.toString());
 
@@ -64,80 +66,104 @@ public class NeuralHighlighter implements Highlighter {
                 return null;
             }
 
-            // Split text into sentences for processing
             List<String> sentences = splitIntoSentences(fieldText);
             if (sentences.isEmpty()) {
                 return null;
             }
 
-            // Process each sentence with the QA model and collect highlights
             List<Text> highlights = new ArrayList<>();
-            for (String sentence : sentences) {
+            
+            if (MODEL_TYPE_MASHQA.equals(modelType)) {
+                // Process entire text at once for MASHQA
                 CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
-
-                // Make async inference call
                 mlCommonsClient.inferenceQA(
                     modelId,
                     searchQuery,
-                    sentence,
+                    fieldText,
                     ActionListener.wrap(result -> future.complete(result), e -> future.completeExceptionally(e))
                 );
 
-                // Process model output
                 Map<String, Object> result = future.get();
                 if (result != null) {
                     Number[] labelsArray = (Number[]) result.get("labels");
-                    List<Integer> labels = Arrays.stream(labelsArray).map(Number::intValue).collect(java.util.stream.Collectors.toList());
-                    log.info("Sentence: {}", sentence);
-                    log.info("Labels: {}", labels);
-
-                    int expectedSpans = ((Number) result.get("num_spans")).intValue();
-                    if (expectedSpans == 0) {
-                        continue;  // Skip if no spans expected
-                    }
-
-                    String[] words = sentence.split("\\s+");
-                    StringBuilder sentenceWithHighlights = new StringBuilder();
-                    int labelIndex = 0;
-                    boolean inSpan = false;
-                    int spanCount = 0;
-
-                    // Process each word and its corresponding label
-                    for (int i = 0; i < words.length && labelIndex < labels.size(); i++) {
-                        String word = words[i];
-
-                        // Add space before word unless it's the first word
-                        if (sentenceWithHighlights.length() > 0) {
-                            sentenceWithHighlights.append(" ");
-                        }
-
-                        if (labelIndex < labels.size()) {
-                            int label = labels.get(labelIndex);
-
-                            if (label == 1) {  // Beginning of span
-                                inSpan = true;
-                                sentenceWithHighlights.append("<em>");
-                            } else if (label == 0 && inSpan) {  // End of span
-                                inSpan = false;
-                                sentenceWithHighlights.append("</em>");
+                    for (int i = 0; i < sentences.size() && i < labelsArray.length; i++) {
+                        if (labelsArray[i].intValue() == 1) {
+                            highlights.add(new Text("<em>" + sentences.get(i) + "</em>"));
+                            if (highlights.size() >= maxSnippets) {
+                                break;
                             }
-                            // label == 2 means continue the current span
-
-                            sentenceWithHighlights.append(word);
-                            labelIndex++;
                         }
                     }
+                }
+            } else {
+                // Original MultiSpan processing
+                for (String sentence : sentences) {
+                    CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
 
-                    // Close any open highlight span
-                    if (inSpan) {
-                        sentenceWithHighlights.append("</em>");
-                    }
+                    // Make async inference call
+                    mlCommonsClient.inferenceQA(
+                        modelId,
+                        searchQuery,
+                        sentence,
+                        ActionListener.wrap(result -> future.complete(result), e -> future.completeExceptionally(e))
+                    );
 
-                    highlights.add(new Text(sentenceWithHighlights.toString()));
+                    // Process model output
+                    Map<String, Object> result = future.get();
+                    if (result != null) {
+                        Number[] labelsArray = (Number[]) result.get("labels");
+                        List<Integer> labels = Arrays.stream(labelsArray).map(Number::intValue).collect(java.util.stream.Collectors.toList());
+                        log.info("Sentence: {}", sentence);
+                        log.info("Labels: {}", labels);
 
-                    // Limit number of highlighted snippets
-                    if (highlights.size() >= maxSnippets) {
-                        break;
+                        int expectedSpans = ((Number) result.get("num_spans")).intValue();
+                        if (expectedSpans == 0) {
+                            continue;  // Skip if no spans expected
+                        }
+
+                        String[] words = sentence.split("\\s+");
+                        StringBuilder sentenceWithHighlights = new StringBuilder();
+                        int labelIndex = 0;
+                        boolean inSpan = false;
+                        int spanCount = 0;
+
+                        // Process each word and its corresponding label
+                        for (int i = 0; i < words.length && labelIndex < labels.size(); i++) {
+                            String word = words[i];
+
+                            // Add space before word unless it's the first word
+                            if (sentenceWithHighlights.length() > 0) {
+                                sentenceWithHighlights.append(" ");
+                            }
+
+                            if (labelIndex < labels.size()) {
+                                int label = labels.get(labelIndex);
+
+                                if (label == 1) {  // Beginning of span
+                                    inSpan = true;
+                                    sentenceWithHighlights.append("<em>");
+                                } else if (label == 0 && inSpan) {  // End of span
+                                    inSpan = false;
+                                    sentenceWithHighlights.append("</em>");
+                                }
+                                // label == 2 means continue the current span
+
+                                sentenceWithHighlights.append(word);
+                                labelIndex++;
+                            }
+                        }
+
+                        // Close any open highlight span
+                        if (inSpan) {
+                            sentenceWithHighlights.append("</em>");
+                        }
+
+                        highlights.add(new Text(sentenceWithHighlights.toString()));
+
+                        // Limit number of highlighted snippets
+                        if (highlights.size() >= maxSnippets) {
+                            break;
+                        }
                     }
                 }
             }
@@ -176,6 +202,11 @@ public class NeuralHighlighter implements Highlighter {
             return DEFAULT_MAX_SNIPPETS;
         }
         return Integer.parseInt(maxSnippets.toString());
+    }
+
+    private String getModelType(Map<String, Object> options) {
+        Object modelType = options.get(MODEL_TYPE_OPTION);
+        return modelType != null ? modelType.toString() : MODEL_TYPE_MULTISPAN;
     }
 
     private String getFieldText(FieldHighlightContext fieldContext) {
