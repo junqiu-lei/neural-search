@@ -338,3 +338,6 @@ through the same build issue.
 3. Head over to your OpenSearch cloned repo root directory
    1. `./gradlew publisToMavenLocal`
 4. Finally run `./gradlew build` from the neural search repo
+
+
+## Test CI for Neural Search
