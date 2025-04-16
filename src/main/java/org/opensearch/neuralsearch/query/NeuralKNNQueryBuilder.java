@@ -6,6 +6,7 @@ package org.opensearch.neuralsearch.query;
 
 import lombok.Getter;
 import org.apache.lucene.search.Query;
+import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.query.AbstractQueryBuilder;
@@ -16,6 +17,7 @@ import org.opensearch.knn.index.query.KNNQueryBuilder;
 import org.opensearch.knn.index.query.parser.KNNQueryBuilderParser;
 import org.opensearch.knn.index.query.rescore.RescoreContext;
 import org.opensearch.knn.index.util.IndexUtil;
+import org.opensearch.neuralsearch.common.MinClusterVersionUtil;
 
 import java.io.IOException;
 import java.util.Map;
@@ -280,6 +282,26 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
     @Override
     public void doWriteTo(StreamOutput out) throws IOException {
         KNNQueryBuilderParser.streamOutput(out, knnQueryBuilder, IndexUtil::isClusterOnOrAfterMinRequiredVersion);
+
+        if (MinClusterVersionUtil.isClusterOnOrAfterMinReqVersionForNeuralKNNQueryText()) {
+            out.writeOptionalString(originalQueryText);
+        }
+    }
+
+    /**
+     * Constructor for deserialization from stream input.
+     *
+     * @param in The stream input to read from
+     * @throws IOException If an I/O error occurs
+     */
+    public NeuralKNNQueryBuilder(StreamInput in) throws IOException {
+        super(in);
+        this.knnQueryBuilder = new KNNQueryBuilder(in);
+        if (MinClusterVersionUtil.isClusterOnOrAfterMinReqVersionForNeuralKNNQueryText()) {
+            this.originalQueryText = in.readOptionalString();
+        } else {
+            this.originalQueryText = null;
+        }
     }
 
     /**
