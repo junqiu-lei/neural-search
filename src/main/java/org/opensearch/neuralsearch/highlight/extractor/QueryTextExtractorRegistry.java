@@ -65,6 +65,14 @@ public class QueryTextExtractorRegistry {
             log.warn("Cannot extract text from null query");
             return null;
         }
+
+        // Log detailed information about the query for debugging
+        log.warn("Query class: {}, Query toString: {}", query.getClass().getName(), query);
+        log.warn(
+            "Available extractors: {}",
+            extractors.keySet().stream().map(Class::getName).collect(java.util.stream.Collectors.joining(", "))
+        );
+
         Class<?> queryClass = query.getClass();
         QueryTextExtractor extractor;
 
@@ -72,9 +80,30 @@ public class QueryTextExtractorRegistry {
 
         if (extractor == null) {
             log.warn("No extractor found for query type: {}", queryClass.getName());
+            // Log parent/interface hierarchy to help identify potential matches
+            Class<?> superClass = queryClass.getSuperclass();
+            log.warn("Parent class hierarchy: {}", getSuperClassHierarchy(queryClass));
             return null;
         }
 
-        return extractor.extractQueryText(query, fieldName);
+        String extractedText = extractor.extractQueryText(query, fieldName);
+        log.warn("Successfully extracted text using {} extractor: '{}'", extractor.getClass().getSimpleName(), extractedText);
+        return extractedText;
+    }
+
+    /**
+     * Helper method to get the hierarchy of superclasses for a given class
+     */
+    private String getSuperClassHierarchy(Class<?> clazz) {
+        StringBuilder hierarchy = new StringBuilder();
+        Class<?> current = clazz;
+        while (current != null && !current.equals(Object.class)) {
+            if (hierarchy.length() > 0) {
+                hierarchy.append(" -> ");
+            }
+            hierarchy.append(current.getName());
+            current = current.getSuperclass();
+        }
+        return hierarchy.toString();
     }
 }

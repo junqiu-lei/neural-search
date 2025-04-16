@@ -81,7 +81,20 @@ public class SemanticHighlighterEngine {
         if (fieldName == null) {
             log.warn("Field name is null, extraction may be less accurate");
         }
-        return queryTextExtractorRegistry.extractQueryText(query, fieldName);
+
+        log.warn("Attempting to extract original query text from query type: {}", query.getClass().getName());
+        log.warn("Query string representation: {}", query.toString());
+
+        // Try to extract query text using the registry
+        String extractedText = queryTextExtractorRegistry.extractQueryText(query, fieldName);
+
+        if (extractedText == null || extractedText.isEmpty()) {
+            log.warn("Failed to extract query text from {}", query.getClass().getName());
+        } else {
+            log.warn("Successfully extracted query text: '{}'", extractedText);
+        }
+
+        return extractedText;
     }
 
     /**

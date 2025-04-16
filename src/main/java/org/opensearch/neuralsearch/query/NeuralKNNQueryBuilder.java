@@ -5,7 +5,9 @@
 package org.opensearch.neuralsearch.query;
 
 import lombok.Getter;
+import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.search.Query;
+import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.query.AbstractQueryBuilder;
@@ -31,6 +33,7 @@ import java.util.Objects;
  */
 
 @Getter
+@Log4j2
 public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBuilder> {
     /**
      * The underlying KNN query builder that handles the vector search functionality
@@ -272,6 +275,20 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
     }
 
     /**
+     * Constructor for deserialization from stream input.
+     *
+     * @param in The stream input to read from
+     * @throws IOException If an I/O error occurs
+     */
+    public NeuralKNNQueryBuilder(StreamInput in) throws IOException {
+        super(in);
+        // Read the KNNQueryBuilder from input stream
+        this.knnQueryBuilder = new KNNQueryBuilder(in);
+        this.originalQueryText = in.readString();
+        log.info("Deserialized NeuralKNNQueryBuilder with knnQueryBuilder: {}, originalQueryText: {}", knnQueryBuilder, originalQueryText);
+    }
+
+    /**
      * Writes this query to the given output stream.
      *
      * @param out The output stream to write to
@@ -279,7 +296,11 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
      */
     @Override
     public void doWriteTo(StreamOutput out) throws IOException {
+        // Write the KNN query builder
         KNNQueryBuilderParser.streamOutput(out, knnQueryBuilder, IndexUtil::isClusterOnOrAfterMinRequiredVersion);
+
+        // Also write the original query text to preserve it during node transport
+        out.writeString(originalQueryText != null ? originalQueryText : "");
     }
 
     /**
@@ -319,8 +340,12 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
      */
     @Override
     protected Query doToQuery(QueryShardContext context) throws IOException {
+        log.warn("Converting NeuralKNNQueryBuilder to Lucene query with originalQueryText: {}", originalQueryText);
         Query knnQuery = knnQueryBuilder.toQuery(context);
-        return new NeuralKNNQuery(knnQuery, originalQueryText);
+        log.warn("Underlying KNN query class: {}", knnQuery.getClass().getName());
+        NeuralKNNQuery neuralQuery = new NeuralKNNQuery(knnQuery, originalQueryText);
+        log.warn("Created NeuralKNNQuery wrapper: {}", neuralQuery);
+        return neuralQuery;
     }
 
     /**
