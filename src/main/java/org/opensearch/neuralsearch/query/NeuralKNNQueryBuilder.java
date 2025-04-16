@@ -18,6 +18,7 @@ import org.opensearch.knn.index.query.KNNQueryBuilder;
 import org.opensearch.knn.index.query.parser.KNNQueryBuilderParser;
 import org.opensearch.knn.index.query.rescore.RescoreContext;
 import org.opensearch.knn.index.util.IndexUtil;
+import org.opensearch.neuralsearch.common.MinClusterVersionUtil;
 
 import java.io.IOException;
 import java.util.Map;
@@ -43,7 +44,7 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
     /**
      * The original text query that was used to generate the vector for this KNN query
      */
-    private final String originalQueryText;
+    private String originalQueryText;
 
     /**
      * Creates a new builder instance for constructing a NeuralKNNQueryBuilder.
@@ -284,8 +285,14 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
         super(in);
         // Read the KNNQueryBuilder from input stream
         this.knnQueryBuilder = new KNNQueryBuilder(in);
-        this.originalQueryText = in.readString();
-        log.info("Deserialized NeuralKNNQueryBuilder with knnQueryBuilder: {}, originalQueryText: {}", knnQueryBuilder, originalQueryText);
+        
+        if (MinClusterVersionUtil.isClusterOnOrAfterMinReqVersionForNeuralKNNQueryText()) {
+            this.originalQueryText = in.readOptionalString();
+            log.debug("Read originalQueryText from stream: {}", originalQueryText);
+        } else {
+            this.originalQueryText = null;
+            log.debug("Skipped reading originalQueryText due to version check");
+        }
     }
 
     /**
@@ -300,7 +307,12 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
         KNNQueryBuilderParser.streamOutput(out, knnQueryBuilder, IndexUtil::isClusterOnOrAfterMinRequiredVersion);
 
         // Also write the original query text to preserve it during node transport
-        out.writeString(originalQueryText != null ? originalQueryText : "");
+        if (MinClusterVersionUtil.isClusterOnOrAfterMinReqVersionForNeuralKNNQueryText()) {
+            out.writeOptionalString(originalQueryText);
+            log.debug("Wrote originalQueryText to stream: {}", originalQueryText);
+        } else {
+            log.debug("Skipped writing originalQueryText due to version check");
+        }
     }
 
     /**
@@ -340,12 +352,8 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
      */
     @Override
     protected Query doToQuery(QueryShardContext context) throws IOException {
-        log.warn("Converting NeuralKNNQueryBuilder to Lucene query with originalQueryText: {}", originalQueryText);
         Query knnQuery = knnQueryBuilder.toQuery(context);
-        log.warn("Underlying KNN query class: {}", knnQuery.getClass().getName());
-        NeuralKNNQuery neuralQuery = new NeuralKNNQuery(knnQuery, originalQueryText);
-        log.warn("Created NeuralKNNQuery wrapper: {}", neuralQuery);
-        return neuralQuery;
+        return new NeuralKNNQuery(knnQuery, originalQueryText);
     }
 
     /**

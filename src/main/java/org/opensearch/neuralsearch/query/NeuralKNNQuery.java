@@ -5,7 +5,6 @@
 package org.opensearch.neuralsearch.query;
 
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.QueryVisitor;
@@ -20,10 +19,20 @@ import java.util.Objects;
  * Delegates core operations to the underlying KNN query.
  */
 @Getter
-@RequiredArgsConstructor
 public class NeuralKNNQuery extends Query {
     private final Query knnQuery;
     private final String originalQueryText;
+
+    /**
+     * Creates a NeuralKNNQuery that wraps a KNN query with an original query text.
+     *
+     * @param knnQuery The KNN query to wrap
+     * @param originalQueryText The original text query that was used to generate the vector
+     */
+    public NeuralKNNQuery(Query knnQuery, String originalQueryText) {
+        this.knnQuery = knnQuery;
+        this.originalQueryText = originalQueryText;
+    }
 
     @Override
     public String toString(String field) {
