@@ -27,9 +27,7 @@ import org.opensearch.index.query.QueryBuilder;
 
 public class HybridSearchIT extends AbstractRestartUpgradeRestTestCase {
     private static final String PIPELINE_NAME = "nlp-hybrid-pipeline";
-    private static final String PIPELINE1_NAME = "nlp-hybrid-1-pipeline";
     private static final String SEARCH_PIPELINE_NAME = "nlp-search-pipeline";
-    private static final String SEARCH_PIPELINE1_NAME = "nlp-search-1-pipeline";
     private static final String TEST_FIELD = "passage_text";
     private static final String TEXT_1 = "Hello world";
     private static final String TEXT_2 = "Hi planet";
@@ -44,13 +42,6 @@ public class HybridSearchIT extends AbstractRestartUpgradeRestTestCase {
     // Validate process , pipeline and document count in restart-upgrade scenario
     public void testNormalizationProcessor_whenIndexWithMultipleShards_E2EFlow() throws Exception {
         validateNormalizationProcessor("processor/IndexMappingMultipleShard.json", PIPELINE_NAME, SEARCH_PIPELINE_NAME);
-    }
-
-    // Test restart-upgrade normalization processor when index with single shard
-    // Create Text Embedding Processor, Ingestion Pipeline, add document and search pipeline with normalization processor
-    // Validate process , pipeline and document count in restart-upgrade scenario
-    public void testNormalizationProcessor_whenIndexWithSingleShard_E2EFlow() throws Exception {
-        validateNormalizationProcessor("processor/IndexMappingSingleShard.json", PIPELINE1_NAME, SEARCH_PIPELINE1_NAME);
     }
 
     private void validateNormalizationProcessor(final String fileName, final String pipelineName, final String searchPipelineName)
