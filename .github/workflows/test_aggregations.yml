@@ -1,4 +1,4 @@
-name: Run Additional Tests for Neural Search
+name: Neural Search Aggregation Tests
 on:
   schedule:
     - cron: '0 0 * * *'  # every night
