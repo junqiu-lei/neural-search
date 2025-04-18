@@ -17,26 +17,17 @@ jobs:
     with:
       product: opensearch
 
-  Check-neural-search-linux:
+  Unit-Tests-And-Checks:
     needs: Get-CI-Image-Tag
     strategy:
       matrix:
         java: [21, 23]
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, windows-latest]
 
-    name: Gradle Check Linux
+    name: Unit Tests & Checks ${{ matrix.os }} Java ${{ matrix.java }}
     runs-on: ${{ matrix.os }}
-    container:
-      # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
-      # this image tag is subject to change as more dependencies and updates will arrive over time
-      image: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
-      # need to switch to root so that github actions can install runner binary on container without permission issues.
-      options: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-options }}
 
     steps:
-      - name: Run start commands
-        run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
-
       - uses: actions/checkout@v4
 
       - name: Setup Java ${{ matrix.java }}
@@ -45,24 +36,40 @@ jobs:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
 
-      - name: Run build
-        run: |
-          chown -R 1000:1000 `pwd`
-          su `id -un 1000` -c "./gradlew check"
-
-      - name: Upload Coverage Report
-        if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v3
+      - name: Run Gradle Checks (Linux)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: nick-fields/retry@v3 # Retry up to 3 times on failure
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          timeout_minutes: 60
+          max_attempts: 3
+          # Need to use docker container for linux builds https://github.com/opensearch-project/opensearch-build/issues/3737
+          command: |
+            docker run \
+            -v ${{ github.workspace }}:/home/opensearch/neural-search \
+            -w /home/opensearch/neural-search \
+            ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }} \
+            /bin/bash -c "${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }} && chown -R 1000:1000 /home/opensearch/neural-search && su `id -un 1000` -c './gradlew check -x integTest --parallel && ./gradlew jacocoTestReport && cp -v build/reports/jacoco/test/jacocoTestReport.xml ./jacocoTestReport-${{ matrix.os }}-${{ matrix.java }}.xml'"
 
-  Check-neural-search-windows:
+      - name: Run Gradle Checks (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: ./gradlew check -x integTest --parallel
+
+      - name: Upload Coverage Report (Linux)
+        if: ${{ matrix.os == 'ubuntu-latest' && !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.os }}-${{ matrix.java }}
+          path: ./jacocoTestReport-${{ matrix.os }}-${{ matrix.java }}.xml
+
+  Integration-Tests:
+    needs: Get-CI-Image-Tag
     strategy:
       matrix:
         java: [21, 23]
-        os: [windows-latest]
+        os: [ubuntu-latest, windows-latest]
+        num_nodes: [1, 3]
 
-    name: Gradle Check Windows
+    name: Integration Tests (${{ matrix.num_nodes }} Node) ${{ matrix.os }} Java ${{ matrix.java }}
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -74,24 +81,53 @@ jobs:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
 
-      - name: Run build
-        run: |
-          ./gradlew check
+      - name: Run Integration Tests (Linux)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: nick-fields/retry@v3 # Retry up to 3 times on failure
+        with:
+          timeout_minutes: 60
+          max_attempts: 3
+          # Need to use docker container for linux builds https://github.com/opensearch-project/opensearch-build/issues/3737
+          command: |
+            docker run \
+            -v ${{ github.workspace }}:/home/opensearch/neural-search \
+            -w /home/opensearch/neural-search \
+            ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }} \
+            /bin/bash -c "${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }} && chown -R 1000:1000 /home/opensearch/neural-search && su `id -un 1000` -c './gradlew integTest --parallel -PnumNodes=${{ matrix.num_nodes }}'"
+
+      - name: Run Integration Tests (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: ./gradlew integTest --parallel -PnumNodes=${{ matrix.num_nodes }}
+
+      - name: Upload failed logs (Linux)
+        uses: actions/upload-artifact@v4
+        if: ${{ matrix.os == 'ubuntu-latest' && failure() }}
+        with:
+          name: logs-integ-test-${{ matrix.num_nodes }}node-${{ matrix.os }}-${{ matrix.java }}
+          overwrite: 'true'
+          path: build/testclusters/integTest-*/logs/*
+
+      - name: Upload failed logs (Windows)
+        uses: actions/upload-artifact@v4
+        if: ${{ matrix.os == 'windows-latest' && failure() }}
+        with:
+          name: logs-integ-test-${{ matrix.num_nodes }}node-${{ matrix.os }}-${{ matrix.java }}
+          overwrite: 'true'
+          # Path needs adjustments for Windows environment if different
+          path: build/testclusters/integTest-*/logs/*
+
 
   Precommit-neural-search-linux:
     needs: Get-CI-Image-Tag
     strategy:
       matrix:
         java: [21, 23]
-        os: [ubuntu-latest]
+        os: [ubuntu-latest] # Precommit often includes Linux-specific checks or tools
 
-    name: Pre-commit Linux
+    name: Pre-commit Linux Java ${{ matrix.java }}
     runs-on: ${{ matrix.os }}
     container:
-      # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
-      # this image tag is subject to change as more dependencies and updates will arrive over time
       image: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
-      # need to switch to root so that github actions can install runner binary on container without permission issues.
       options: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-options }}
 
     steps:
@@ -106,25 +142,21 @@ jobs:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
 
-      - name: Run build
+      - name: Run precommit tasks
         run: |
           chown -R 1000:1000 `pwd`
-          su `id -un 1000` -c "./gradlew precommit --parallel && ./gradlew jacocoTestReport && cp -v build/reports/jacoco/test/jacocoTestReport.xml ./jacocoTestReport.xml"
-
-      - uses: actions/upload-artifact@v4
-        if: ${{ matrix.os }} == "ubuntu-latest"
-        with:
-          name: coverage-report-${{ matrix.os }}-${{ matrix.java }}
-          path: ./jacocoTestReport.xml
+          su `id -un 1000` -c "./gradlew precommit --parallel"
 
   Precommit-codecov:
-    needs: Precommit-neural-search-linux
+    # This job now depends on the coverage reports generated by the Unit-Tests-And-Checks job
+    needs: Unit-Tests-And-Checks
     strategy:
       matrix:
         java: [21, 23]
-        os: [ubuntu-latest]
+        os: [ubuntu-latest] # Coverage is only generated on Linux currently
     runs-on: ${{ matrix.os }}
     steps:
+      # Download the specific coverage report for the matrix combination
       - uses: actions/download-artifact@v4
         with:
           name: coverage-report-${{ matrix.os }}-${{ matrix.java }}
@@ -133,4 +165,5 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./jacocoTestReport.xml
+          # Use the downloaded file name pattern
+          files: ./jacocoTestReport-${{ matrix.os }}-${{ matrix.java }}.xml
