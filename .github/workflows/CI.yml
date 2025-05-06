@@ -26,6 +26,8 @@ jobs:
 
     name: Gradle Check Linux
     runs-on: ${{ matrix.os }}
+    permissions:
+      pull-requests: write  # Required for PR comments
     container:
       # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
       # this image tag is subject to change as more dependencies and updates will arrive over time
@@ -39,6 +41,14 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Start Monitoring
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          metric_frequency: 5
+          proc_trace_sys_enable: true
+          job_summary: true
+          comment_on_pr: true
+
       - name: Setup Java ${{ matrix.java }}
         uses: actions/setup-java@v4
         with:
@@ -49,6 +59,52 @@ jobs:
         run: |
           chown -R 1000:1000 `pwd`
           su `id -un 1000` -c "./gradlew check"
+
+      - name: Upload Coverage Report
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  Check-neural-search-linux-multi-node:
+    needs: Get-CI-Image-Tag
+    strategy:
+      matrix:
+        java: [21]
+        os: [ubuntu-latest]
+
+    name: Gradle Check Linux Multi-Node
+    runs-on: ${{ matrix.os }}
+    permissions:
+      pull-requests: write  # Required for PR comments
+    container:
+      image: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
+      options: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-options }}
+
+    steps:
+      - name: Run start commands
+        run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
+
+      - uses: actions/checkout@v4
+
+      - name: Start Monitoring
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          metric_frequency: 5
+          proc_trace_sys_enable: true
+          job_summary: true
+          comment_on_pr: true
+
+      - name: Setup Java ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ matrix.java }}
+
+      - name: Run multi-node tests
+        run: |
+          chown -R 1000:1000 `pwd`
+          su `id -un 1000` -c "./gradlew check -PnumNodes=3"
 
       - name: Upload Coverage Report
         if: ${{ !cancelled() }}
