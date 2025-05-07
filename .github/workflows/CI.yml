@@ -41,6 +41,15 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Debug Network Info
+        run: |
+          echo "Checking network connectivity..."
+          ping -c 3 127.0.0.1
+          netstat -an | grep 7777
+          echo "Current directory: $(pwd)"
+          echo "Environment variables:"
+          env | sort
+
       - name: Start Monitoring
         uses: catchpoint/workflow-telemetry-action@v2
         with:
@@ -48,6 +57,17 @@ jobs:
           proc_trace_sys_enable: true
           job_summary: true
           comment_on_pr: true
+          proc_trace_chart_show: true
+          proc_trace_table_show: true
+
+      - name: Debug After Telemetry
+        run: |
+          echo "Checking processes after telemetry..."
+          ps aux | grep telemetry
+          echo "Checking network connections..."
+          netstat -an | grep 7777
+          echo "Checking logs..."
+          ls -la /tmp/telemetry* 2>/dev/null || echo "No telemetry logs found"
 
       - name: Setup Java ${{ matrix.java }}
         uses: actions/setup-java@v4
@@ -87,6 +107,15 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Debug Network Info
+        run: |
+          echo "Checking network connectivity..."
+          ping -c 3 127.0.0.1
+          netstat -an | grep 7777
+          echo "Current directory: $(pwd)"
+          echo "Environment variables:"
+          env | sort
+
       - name: Start Monitoring
         uses: catchpoint/workflow-telemetry-action@v2
         with:
@@ -94,6 +123,17 @@ jobs:
           proc_trace_sys_enable: true
           job_summary: true
           comment_on_pr: true
+          proc_trace_chart_show: true
+          proc_trace_table_show: true
+
+      - name: Debug After Telemetry
+        run: |
+          echo "Checking processes after telemetry..."
+          ps aux | grep telemetry
+          echo "Checking network connections..."
+          netstat -an | grep 7777
+          echo "Checking logs..."
+          ls -la /tmp/telemetry* 2>/dev/null || echo "No telemetry logs found"
 
       - name: Setup Java ${{ matrix.java }}
         uses: actions/setup-java@v4
