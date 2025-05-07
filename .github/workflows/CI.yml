@@ -49,6 +49,8 @@ jobs:
 
       - name: Collect Workflow Telemetry
         uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          comment_on_pr: false
 
       - name: Run build
         run: |
@@ -83,6 +85,8 @@ jobs:
 
       - name: Collect Workflow Telemetry
         uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          comment_on_pr: false
 
       - name: Run build
         run: |
@@ -90,8 +94,6 @@ jobs:
 
   Precommit-neural-search-linux:
     needs: Get-CI-Image-Tag
-    permissions:
-      pull-requests: write
     strategy:
       matrix:
         java: [21, 23]
@@ -117,9 +119,6 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
-
-      - name: Collect Workflow Telemetry
-        uses: catchpoint/workflow-telemetry-action@v2
 
       - name: Run build
         run: |
