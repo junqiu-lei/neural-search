@@ -410,14 +410,15 @@ testClusters.integTest {
         }
     }
 
-    // Set heap size based on CI environment variable
-    if (System.getenv("CI") == "true") {
-        println "CI detected: Using large heap size (-Xms4g -Xmx8g)"
-        jvmArgs("-Xms4g", "-Xmx8g")
-    } else {
-        println "CI not detected: Using default heap size (-Xms1g -Xmx2g)"
-        jvmArgs("-Xms1g", "-Xmx2g")
-    }
+//    // Set heap size based on CI environment variable
+//    if (System.getenv("CI") == "true") {
+//        println "CI detected: Using large heap size (-Xms4g -Xmx8g)"
+//        jvmArgs("-Xms4g", "-Xmx8g")
+//    } else {
+//        println "CI not detected: Using default heap size (-Xms1g -Xmx2g)"
+//        jvmArgs("-Xms1g", "-Xmx2g")
+//    }
+    jvmArgs("-Xms1g", "-Xmx2g")
 }
 
 // Remote Integration Tests
