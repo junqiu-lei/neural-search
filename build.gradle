@@ -413,7 +413,7 @@ testClusters.integTest {
     // Set heap size based on CI environment variable
     if (System.getenv("CI") == "true") {
         println "Github CI detected: Using large heap size (-Xms4g -Xmx8g)"
-        jvmArgs("-Xms4g", "-Xmx8g")
+        jvmArgs("-Xms8g", "-Xmx12g")
     } else {
         println "Using heap size (-Xms1g -Xmx2g)"
         jvmArgs("-Xms1g", "-Xmx2g")
