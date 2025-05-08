@@ -1,0 +1,49 @@
+name: Neural Search Multi-Node Integration Tests
+on:
+  schedule:
+    - cron: '0 1 * * *'  # every night at 1 AM to avoid overlap
+  push:
+    branches:
+      - "*"
+      - "feature/**"
+  pull_request:
+    branches:
+      - "*"
+      - "feature/**"
+
+jobs:
+  Get-CI-Image-Tag:
+    uses: opensearch-project/opensearch-build/.github/workflows/get-ci-image-tag.yml@main
+    with:
+      product: opensearch
+
+  Check-neural-search-linux-multi-node:
+    needs: Get-CI-Image-Tag
+    strategy:
+      matrix:
+        java: [21] # Start with one Java version for simplicity
+        os: [ubuntu-latest]
+
+    name: Integration Tests (3 Nodes) Linux
+    runs-on: ${{ matrix.os }}
+    container:
+      image: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
+      options: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-options }}
+
+    steps:
+      - name: Run start commands
+        run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
+
+      - name: Checkout neural-search
+        uses: actions/checkout@v4
+
+      - name: Setup Java ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ matrix.java }}
+
+      - name: Run 3-node integration tests
+        run: |
+          chown -R 1000:1000 `pwd`
+          su `id -un 1000` -c "./gradlew integTest -PnumNodes=3" 
