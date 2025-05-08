@@ -19,6 +19,8 @@ jobs:
 
   Check-neural-search-linux:
     needs: Get-CI-Image-Tag
+    permissions:
+      pull-requests: write
     strategy:
       matrix:
         java: [21, 23]
@@ -45,6 +47,11 @@ jobs:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
 
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          comment_on_pr: false
+
       - name: Run build
         run: |
           chown -R 1000:1000 `pwd`
@@ -61,6 +68,8 @@ jobs:
       matrix:
         java: [21, 23]
         os: [windows-latest]
+    permissions:
+      pull-requests: write
 
     name: Gradle Check Windows
     runs-on: ${{ matrix.os }}
@@ -73,6 +82,11 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
+
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          comment_on_pr: false
 
       - name: Run build
         run: |
