@@ -45,6 +45,14 @@ jobs:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
 
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          metric_frequency: 5
+          proc_trace_sys_enable: true
+          comment_on_pr: true
+          job_summary: true
+
       - name: Run build
         run: |
           chown -R 1000:1000 `pwd`
