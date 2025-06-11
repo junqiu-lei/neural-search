@@ -38,52 +38,18 @@ public class SemanticHighlighter implements Highlighter {
 
     /**
      * Highlights a field using semantic highlighting
+     * 
+     * Note: With the introduction of ParallelSemanticHighlightFetchSubPhase,
+     * this method now returns null to avoid redundant processing.
+     * The actual highlighting is performed by the FetchSubPhase.
      *
      * @param fieldContext The field context containing the query and field information
-     * @return The highlighted field or null if highlighting is not possible
+     * @return null - highlighting is handled by ParallelSemanticHighlightFetchSubPhase
      */
     @Override
     public HighlightField highlight(FieldHighlightContext fieldContext) {
-        if (semanticHighlighterEngine == null) {
-            throw new IllegalStateException("SemanticHighlighter has not been initialized");
-        }
-
-        EventStatsManager.increment(EventStatName.SEMANTIC_HIGHLIGHTING_REQUEST_COUNT);
-
-        // Extract field text
-        String fieldText = semanticHighlighterEngine.getFieldText(fieldContext);
-
-        // Get model ID
-        String modelId = semanticHighlighterEngine.getModelId(fieldContext.field.fieldOptions().options());
-
-        // Try to extract query text
-        String originalQueryText = semanticHighlighterEngine.extractOriginalQuery(fieldContext.query, fieldContext.fieldName);
-
-        if (originalQueryText == null || originalQueryText.isEmpty()) {
-            log.warn("No query text found for field {}", fieldContext.fieldName);
-            return null;
-        }
-
-        // The pre- and post- tags are provided by the user or defaulted to <em> and </em>
-        String[] preTags = fieldContext.field.fieldOptions().preTags();
-        String[] postTags = fieldContext.field.fieldOptions().postTags();
-
-        // Get highlighted text - allow any exceptions from this call to propagate
-        String highlightedResponse = semanticHighlighterEngine.getHighlightedSentences(
-            modelId,
-            originalQueryText,
-            fieldText,
-            preTags[0],
-            postTags[0]
-        );
-
-        if (highlightedResponse == null || highlightedResponse.isEmpty()) {
-            log.warn("No highlighted text found for field {}", fieldContext.fieldName);
-            return null;
-        }
-
-        // Create highlight field
-        Text[] fragments = new Text[] { new Text(highlightedResponse) };
-        return new HighlightField(fieldContext.fieldName, fragments);
+        // Return null to make this a no-op
+        // The ParallelSemanticHighlightFetchSubPhase will handle the actual highlighting
+        return null;
     }
 }

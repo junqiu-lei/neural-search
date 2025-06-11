@@ -6,6 +6,7 @@ package org.opensearch.neuralsearch.plugin;
 
 import static org.opensearch.neuralsearch.settings.NeuralSearchSettings.RERANKER_MAX_DOC_FIELDS;
 import static org.opensearch.neuralsearch.settings.NeuralSearchSettings.NEURAL_STATS_ENABLED;
+import static org.opensearch.neuralsearch.settings.NeuralSearchSettings.SEMANTIC_HIGHLIGHT_PARALLELISM_LEVEL;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -18,6 +19,7 @@ import java.util.function.Supplier;
 import org.opensearch.ml.client.MachineLearningNodeClient;
 import org.opensearch.neuralsearch.highlight.SemanticHighlighter;
 import org.opensearch.neuralsearch.highlight.SemanticHighlighterEngine;
+import org.opensearch.neuralsearch.highlight.ParallelSemanticHighlightFetchSubPhase;
 import org.opensearch.neuralsearch.highlight.extractor.QueryTextExtractorRegistry;
 import com.google.common.collect.ImmutableList;
 import org.opensearch.action.ActionRequest;
@@ -91,6 +93,7 @@ import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.rest.RestController;
 import org.opensearch.rest.RestHandler;
 import org.opensearch.script.ScriptService;
+import org.opensearch.search.fetch.FetchSubPhase;
 import org.opensearch.search.fetch.subphase.highlight.Highlighter;
 import org.opensearch.search.pipeline.SearchPhaseResultsProcessor;
 import org.opensearch.search.pipeline.SearchRequestProcessor;
@@ -123,6 +126,7 @@ public class NeuralSearch extends Plugin
     private final ScoreNormalizationFactory scoreNormalizationFactory = new ScoreNormalizationFactory();
     private final ScoreCombinationFactory scoreCombinationFactory = new ScoreCombinationFactory();
     private final SemanticHighlighter semanticHighlighter;
+    private ParallelSemanticHighlightFetchSubPhase parallelSemanticHighlightFetchSubPhase;
     public static final String EXPLANATION_RESPONSE_KEY = "explanation_response";
     public static final String NEURAL_BASE_URI = "/_plugins/_neural";
 
@@ -153,6 +157,19 @@ public class NeuralSearch extends Plugin
             .queryTextExtractorRegistry(queryTextExtractorRegistry)
             .build();
         semanticHighlighter.initialize(semanticHighlighterEngine);
+        
+        // Initialize the parallel semantic highlight fetch sub-phase
+        parallelSemanticHighlightFetchSubPhase = new ParallelSemanticHighlightFetchSubPhase(
+            semanticHighlighterEngine,
+            environment.settings()
+        );
+        
+        // Register listener for dynamic setting updates
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(
+            SEMANTIC_HIGHLIGHT_PARALLELISM_LEVEL,
+            parallelSemanticHighlightFetchSubPhase::updateParallelismLevel
+        );
+        
         HybridQueryExecutor.initialize(threadPool);
         normalizationProcessorWorkflow = new NormalizationProcessorWorkflow(new ScoreNormalizer(), new ScoreCombiner());
         settingsAccessor = new NeuralSearchSettingsAccessor(clusterService, environment.settings());
@@ -246,7 +263,7 @@ public class NeuralSearch extends Plugin
 
     @Override
     public List<Setting<?>> getSettings() {
-        return List.of(RERANKER_MAX_DOC_FIELDS, NEURAL_STATS_ENABLED);
+        return List.of(RERANKER_MAX_DOC_FIELDS, NEURAL_STATS_ENABLED, SEMANTIC_HIGHLIGHT_PARALLELISM_LEVEL);
     }
 
     @Override
@@ -290,6 +307,14 @@ public class NeuralSearch extends Plugin
     @Override
     public Map<String, Highlighter> getHighlighters() {
         return Collections.singletonMap(SemanticHighlighter.NAME, semanticHighlighter);
+    }
+
+    /**
+     * Register fetch sub-phases including our parallel semantic highlight fetch sub-phase
+     */
+    @Override
+    public List<FetchSubPhase> getFetchSubPhases(FetchPhaseConstructionContext context) {
+        return List.of(parallelSemanticHighlightFetchSubPhase);
     }
 
     @Override

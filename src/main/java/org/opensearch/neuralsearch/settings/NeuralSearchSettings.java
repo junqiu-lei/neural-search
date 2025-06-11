@@ -35,4 +35,17 @@ public final class NeuralSearchSettings {
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
+
+    /**
+     * Controls the level of parallelism for semantic highlighting.
+     * This setting determines how many concurrent inference requests can be made
+     * when processing multiple documents for highlighting.
+     */
+    public static final Setting<Integer> SEMANTIC_HIGHLIGHT_PARALLELISM_LEVEL = Setting.intSetting(
+        "plugins.neural_search.highlight.parallelism_level",
+        Runtime.getRuntime().availableProcessors(),
+        1,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
 }
