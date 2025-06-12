@@ -133,6 +133,14 @@ public class SemanticHighlighterEngine {
      * @return The highlighting results
      */
     public List<Map<String, Object>> fetchModelResults(String modelId, String question, String context) {
+        long startMillis = System.currentTimeMillis();
+        log.info(
+            "[semantic-hl] Inference START at {} ms | modelId={} qLen={} ctxLen={}",
+            startMillis,
+            modelId,
+            question == null ? 0 : question.length(),
+            context == null ? 0 : context.length()
+        );
         PlainActionFuture<List<Map<String, Object>>> future = PlainActionFuture.newFuture();
 
         SentenceHighlightingRequest request = SentenceHighlightingRequest.builder()
@@ -144,7 +152,15 @@ public class SemanticHighlighterEngine {
         mlCommonsClient.inferenceSentenceHighlighting(request, future);
 
         try {
-            return future.actionGet();
+            List<Map<String, Object>> res = future.actionGet();
+            if (log.isInfoEnabled()) {
+                String resStr = String.valueOf(res);
+                if (resStr.length() > 500) {
+                    resStr = resStr.substring(0, 500) + " ...";
+                }
+                log.info("[semantic-hl] Inference RESULT size={} payload={}", res == null ? 0 : res.size(), resStr);
+            }
+            return res;
         } catch (Exception e) {
             log.error(
                 "Error during sentence highlighting inference - modelId: [{}], question: [{}], context: [{}]",
@@ -157,6 +173,9 @@ public class SemanticHighlighterEngine {
                 String.format(Locale.ROOT, "Error during sentence highlighting inference from model [%s]", modelId),
                 e
             );
+        } finally {
+            long endMillis = System.currentTimeMillis();
+            log.info("[semantic-hl] Inference END   at {} ms | duration={} ms", endMillis, (endMillis - startMillis));
         }
     }
 

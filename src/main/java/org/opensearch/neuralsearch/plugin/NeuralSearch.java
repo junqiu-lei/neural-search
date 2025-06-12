@@ -21,6 +21,8 @@ import org.opensearch.neuralsearch.highlight.SemanticHighlighterEngine;
 import org.opensearch.neuralsearch.highlight.extractor.QueryTextExtractorRegistry;
 import com.google.common.collect.ImmutableList;
 import org.opensearch.action.ActionRequest;
+import org.opensearch.action.support.ActionFilter;
+import org.opensearch.neuralsearch.action.SemanticHighlightActionFilter;
 import org.opensearch.neuralsearch.settings.NeuralSearchSettingsAccessor;
 import org.opensearch.neuralsearch.stats.events.EventStatsManager;
 import org.opensearch.neuralsearch.stats.info.InfoStatsManager;
@@ -46,6 +48,7 @@ import org.opensearch.env.Environment;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.ingest.Processor;
 import org.opensearch.neuralsearch.executors.HybridQueryExecutor;
+import org.opensearch.neuralsearch.executors.SemanticHighlightExecutor;
 import org.opensearch.neuralsearch.ml.MLCommonsClientAccessor;
 import org.opensearch.neuralsearch.processor.NeuralQueryEnricherProcessor;
 import org.opensearch.neuralsearch.processor.NeuralSparseTwoPhaseProcessor;
@@ -99,6 +102,7 @@ import org.opensearch.search.query.QueryPhaseSearcher;
 import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.watcher.ResourceWatcherService;
+import org.opensearch.search.fetch.FetchSubPhase;
 
 import lombok.extern.log4j.Log4j2;
 
@@ -125,6 +129,12 @@ public class NeuralSearch extends Plugin
     private final SemanticHighlighter semanticHighlighter;
     public static final String EXPLANATION_RESPONSE_KEY = "explanation_response";
     public static final String NEURAL_BASE_URI = "/_plugins/_neural";
+    private ThreadPool threadPool;
+    private SemanticHighlighterEngine semanticHighlighterEngine;
+    private Environment environment;
+    private SemanticHighlightActionFilter semanticHighlightActionFilter;
+    private static volatile ThreadPool STATIC_THREAD_POOL;
+    private static volatile SemanticHighlighterEngine STATIC_ENGINE;
 
     public NeuralSearch() {
         this.semanticHighlighter = new SemanticHighlighter();
@@ -148,18 +158,27 @@ public class NeuralSearch extends Plugin
         NeuralQueryBuilder.initialize(clientAccessor);
         NeuralSparseQueryBuilder.initialize(clientAccessor);
         QueryTextExtractorRegistry queryTextExtractorRegistry = new QueryTextExtractorRegistry();
-        SemanticHighlighterEngine semanticHighlighterEngine = SemanticHighlighterEngine.builder()
+        this.semanticHighlighterEngine = SemanticHighlighterEngine.builder()
             .mlCommonsClient(clientAccessor)
             .queryTextExtractorRegistry(queryTextExtractorRegistry)
             .build();
         semanticHighlighter.initialize(semanticHighlighterEngine);
         HybridQueryExecutor.initialize(threadPool);
+        SemanticHighlightExecutor.initialize(threadPool);
         normalizationProcessorWorkflow = new NormalizationProcessorWorkflow(new ScoreNormalizer(), new ScoreCombiner());
+        this.environment = environment;
         settingsAccessor = new NeuralSearchSettingsAccessor(clusterService, environment.settings());
         pipelineServiceUtil = new PipelineServiceUtil(clusterService);
         infoStatsManager = new InfoStatsManager(NeuralSearchClusterUtil.instance(), settingsAccessor, pipelineServiceUtil);
         EventStatsManager.instance().initialize(settingsAccessor);
         this.xContentRegistry = xContentRegistry;
+        this.threadPool = threadPool;
+        STATIC_THREAD_POOL = threadPool;
+        STATIC_ENGINE = this.semanticHighlighterEngine;
+
+        // Initialize ActionFilter for concurrent semantic highlighting optimization
+        this.semanticHighlightActionFilter = new SemanticHighlightActionFilter(client, true);
+
         return List.of(clientAccessor, EventStatsManager.instance(), infoStatsManager);
     }
 
@@ -193,8 +212,13 @@ public class NeuralSearch extends Plugin
     }
 
     @Override
+    public List<ActionFilter> getActionFilters() {
+        return List.of(semanticHighlightActionFilter);
+    }
+
+    @Override
     public List<ExecutorBuilder<?>> getExecutorBuilders(Settings settings) {
-        return List.of(HybridQueryExecutor.getExecutorBuilder(settings));
+        return List.of(HybridQueryExecutor.getExecutorBuilder(settings), SemanticHighlightExecutor.getExecutorBuilder(settings));
     }
 
     @Override
@@ -246,7 +270,11 @@ public class NeuralSearch extends Plugin
 
     @Override
     public List<Setting<?>> getSettings() {
-        return List.of(RERANKER_MAX_DOC_FIELDS, NEURAL_STATS_ENABLED);
+        return List.of(
+            RERANKER_MAX_DOC_FIELDS,
+            NEURAL_STATS_ENABLED,
+            org.opensearch.neuralsearch.settings.NeuralSearchSettings.SEMANTIC_HIGHLIGHT_MAX_PARALLELISM
+        );
     }
 
     @Override
@@ -313,5 +341,23 @@ public class NeuralSearch extends Plugin
                 parameters.analysisRegistry
             )
         );
+    }
+
+    @Override
+    public List<FetchSubPhase> getFetchSubPhases(FetchPhaseConstructionContext context) {
+        // ActionFilter approach provides true concurrency without FetchSubPhase constraints
+        return List.of();
+    }
+
+    public static ThreadPool getThreadPoolStatic() {
+        return STATIC_THREAD_POOL;
+    }
+
+    public static SemanticHighlighterEngine getSemanticEngineStatic() {
+        return STATIC_ENGINE;
+    }
+
+    public static java.util.concurrent.ExecutorService getSemanticHighlightExecutorStatic() {
+        return SemanticHighlightExecutor.getExecutor();
     }
 }

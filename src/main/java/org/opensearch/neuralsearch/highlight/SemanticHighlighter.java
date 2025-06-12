@@ -11,7 +11,6 @@ import org.opensearch.neuralsearch.stats.events.EventStatsManager;
 import org.opensearch.search.fetch.subphase.highlight.FieldHighlightContext;
 import org.opensearch.search.fetch.subphase.highlight.HighlightField;
 import org.opensearch.search.fetch.subphase.highlight.Highlighter;
-import org.opensearch.core.common.text.Text;
 
 /**
  * Semantic highlighter that uses ML models to identify relevant text spans for highlighting
@@ -44,46 +43,9 @@ public class SemanticHighlighter implements Highlighter {
      */
     @Override
     public HighlightField highlight(FieldHighlightContext fieldContext) {
-        if (semanticHighlighterEngine == null) {
-            throw new IllegalStateException("SemanticHighlighter has not been initialized");
-        }
-
+        // Stub implementation: main inference work is performed by SemanticHighlightSubPhase
+        // Still increment stat counters for visibility but return null immediately to skip default highlighting.
         EventStatsManager.increment(EventStatName.SEMANTIC_HIGHLIGHTING_REQUEST_COUNT);
-
-        // Extract field text
-        String fieldText = semanticHighlighterEngine.getFieldText(fieldContext);
-
-        // Get model ID
-        String modelId = semanticHighlighterEngine.getModelId(fieldContext.field.fieldOptions().options());
-
-        // Try to extract query text
-        String originalQueryText = semanticHighlighterEngine.extractOriginalQuery(fieldContext.query, fieldContext.fieldName);
-
-        if (originalQueryText == null || originalQueryText.isEmpty()) {
-            log.warn("No query text found for field {}", fieldContext.fieldName);
-            return null;
-        }
-
-        // The pre- and post- tags are provided by the user or defaulted to <em> and </em>
-        String[] preTags = fieldContext.field.fieldOptions().preTags();
-        String[] postTags = fieldContext.field.fieldOptions().postTags();
-
-        // Get highlighted text - allow any exceptions from this call to propagate
-        String highlightedResponse = semanticHighlighterEngine.getHighlightedSentences(
-            modelId,
-            originalQueryText,
-            fieldText,
-            preTags[0],
-            postTags[0]
-        );
-
-        if (highlightedResponse == null || highlightedResponse.isEmpty()) {
-            log.warn("No highlighted text found for field {}", fieldContext.fieldName);
-            return null;
-        }
-
-        // Create highlight field
-        Text[] fragments = new Text[] { new Text(highlightedResponse) };
-        return new HighlightField(fieldContext.fieldName, fragments);
+        return null;
     }
 }

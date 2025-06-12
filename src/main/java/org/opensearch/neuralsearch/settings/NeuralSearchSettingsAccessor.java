@@ -16,6 +16,9 @@ public class NeuralSearchSettingsAccessor {
     @Getter
     private volatile boolean isStatsEnabled;
 
+    @Getter
+    private volatile int semanticHighlightParallelism;
+
     /**
      * Constructor, registers callbacks to update settings
      * @param clusterService
@@ -23,6 +26,7 @@ public class NeuralSearchSettingsAccessor {
      */
     public NeuralSearchSettingsAccessor(ClusterService clusterService, Settings settings) {
         isStatsEnabled = NeuralSearchSettings.NEURAL_STATS_ENABLED.get(settings);
+        semanticHighlightParallelism = NeuralSearchSettings.SEMANTIC_HIGHLIGHT_MAX_PARALLELISM.get(settings);
         registerSettingsCallbacks(clusterService);
     }
 
@@ -33,6 +37,10 @@ public class NeuralSearchSettingsAccessor {
                 EventStatsManager.instance().reset();
             }
             isStatsEnabled = value;
+        });
+
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(NeuralSearchSettings.SEMANTIC_HIGHLIGHT_MAX_PARALLELISM, value -> {
+            semanticHighlightParallelism = value;
         });
     }
 }

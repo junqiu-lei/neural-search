@@ -25,3 +25,7 @@ bin/
 
 # git stuff
 .gitattributes
+
+# Neural search dev files (dynamically generated)
+model_ids.txt
+**/model_ids.txt

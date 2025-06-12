@@ -35,4 +35,15 @@ public final class NeuralSearchSettings {
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
+
+    /**
+     * Limits the number of parallel threads for semantic highlighting.
+     */
+    public static final Setting<Integer> SEMANTIC_HIGHLIGHT_MAX_PARALLELISM = Setting.intSetting(
+        "plugins.neural_search.semantic_highlighting.max_parallelism",
+        8,
+        1,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
 }
