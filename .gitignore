@@ -25,3 +25,12 @@ bin/
 
 # git stuff
 .gitattributes
+
+# Development artifacts and documentation  
+*.md
+bin/dev/
+docs/
+*_results_*/
+*.csv
+*.sh
+model_ids.txt

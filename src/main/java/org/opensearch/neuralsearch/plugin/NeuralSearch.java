@@ -21,6 +21,9 @@ import org.opensearch.neuralsearch.highlight.SemanticHighlighterEngine;
 import org.opensearch.neuralsearch.highlight.extractor.QueryTextExtractorRegistry;
 import com.google.common.collect.ImmutableList;
 import org.opensearch.action.ActionRequest;
+import org.opensearch.action.support.ActionFilter;
+import org.opensearch.neuralsearch.action.SemanticHighlightActionFilter;
+import org.opensearch.neuralsearch.executors.SemanticHighlightExecutor;
 import org.opensearch.neuralsearch.settings.NeuralSearchSettingsAccessor;
 import org.opensearch.neuralsearch.stats.events.EventStatsManager;
 import org.opensearch.neuralsearch.stats.info.InfoStatsManager;
@@ -123,6 +126,12 @@ public class NeuralSearch extends Plugin
     private final ScoreNormalizationFactory scoreNormalizationFactory = new ScoreNormalizationFactory();
     private final ScoreCombinationFactory scoreCombinationFactory = new ScoreCombinationFactory();
     private final SemanticHighlighter semanticHighlighter;
+    private SemanticHighlightActionFilter semanticHighlightActionFilter;
+    private ThreadPool threadPool;
+    private SemanticHighlighterEngine semanticHighlighterEngine;
+    private Environment environment;
+    private static volatile ThreadPool STATIC_THREAD_POOL;
+    private static volatile SemanticHighlighterEngine STATIC_ENGINE;
     public static final String EXPLANATION_RESPONSE_KEY = "explanation_response";
     public static final String NEURAL_BASE_URI = "/_plugins/_neural";
 
@@ -148,18 +157,27 @@ public class NeuralSearch extends Plugin
         NeuralQueryBuilder.initialize(clientAccessor);
         NeuralSparseQueryBuilder.initialize(clientAccessor);
         QueryTextExtractorRegistry queryTextExtractorRegistry = new QueryTextExtractorRegistry();
-        SemanticHighlighterEngine semanticHighlighterEngine = SemanticHighlighterEngine.builder()
+        this.semanticHighlighterEngine = SemanticHighlighterEngine.builder()
             .mlCommonsClient(clientAccessor)
             .queryTextExtractorRegistry(queryTextExtractorRegistry)
             .build();
         semanticHighlighter.initialize(semanticHighlighterEngine);
         HybridQueryExecutor.initialize(threadPool);
+        SemanticHighlightExecutor.initialize(threadPool);
         normalizationProcessorWorkflow = new NormalizationProcessorWorkflow(new ScoreNormalizer(), new ScoreCombiner());
+        this.environment = environment;
         settingsAccessor = new NeuralSearchSettingsAccessor(clusterService, environment.settings());
         pipelineServiceUtil = new PipelineServiceUtil(clusterService);
         infoStatsManager = new InfoStatsManager(NeuralSearchClusterUtil.instance(), settingsAccessor, pipelineServiceUtil);
         EventStatsManager.instance().initialize(settingsAccessor);
         this.xContentRegistry = xContentRegistry;
+        this.threadPool = threadPool;
+        STATIC_THREAD_POOL = threadPool;
+        STATIC_ENGINE = this.semanticHighlighterEngine;
+
+        // Initialize ActionFilter for concurrent semantic highlighting optimization
+        this.semanticHighlightActionFilter = new SemanticHighlightActionFilter(client, true);
+
         return List.of(clientAccessor, EventStatsManager.instance(), infoStatsManager);
     }
 
@@ -193,8 +211,13 @@ public class NeuralSearch extends Plugin
     }
 
     @Override
+    public List<ActionFilter> getActionFilters() {
+        return List.of(semanticHighlightActionFilter);
+    }
+
+    @Override
     public List<ExecutorBuilder<?>> getExecutorBuilders(Settings settings) {
-        return List.of(HybridQueryExecutor.getExecutorBuilder(settings));
+        return List.of(HybridQueryExecutor.getExecutorBuilder(settings), SemanticHighlightExecutor.getExecutorBuilder(settings));
     }
 
     @Override
@@ -313,5 +336,19 @@ public class NeuralSearch extends Plugin
                 parameters.analysisRegistry
             )
         );
+    }
+
+    /**
+     * Static access to SemanticHighlighterEngine for ActionFilter
+     */
+    public static SemanticHighlighterEngine getSemanticEngineStatic() {
+        return STATIC_ENGINE;
+    }
+
+    /**
+     * Static access to SemanticHighlight ExecutorService for ActionFilter
+     */
+    public static java.util.concurrent.ExecutorService getSemanticHighlightExecutorStatic() {
+        return SemanticHighlightExecutor.getExecutorService();
     }
 }
