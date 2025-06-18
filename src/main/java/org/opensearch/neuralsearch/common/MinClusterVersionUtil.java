@@ -35,6 +35,11 @@ public final class MinClusterVersionUtil {
         .put(MAX_DISTANCE_FIELD.getPreferredName(), MINIMAL_SUPPORTED_VERSION_RADIAL_SEARCH)
         .put(MIN_SCORE_FIELD.getPreferredName(), MINIMAL_SUPPORTED_VERSION_RADIAL_SEARCH)
         .put(QUERY_IMAGE_FIELD.getPreferredName(), MINIMAL_SUPPORTED_VERSION_QUERY_IMAGE_FIX)
+        // Ensure neural-search handles all k-NN parameters consistently across cluster nodes
+        .put("radial_search", MINIMAL_SUPPORTED_VERSION_RADIAL_SEARCH)
+        .put("method_parameters", Version.V_2_16_0)
+        .put("rescore", Version.V_2_17_0)
+        .put("expand_nested_docs", MINIMAL_SUPPORTED_VERSION_PAGINATION_IN_HYBRID_QUERY)
         .build();
 
     public static boolean isClusterOnOrAfterMinReqVersionForDefaultDenseModelIdSupport() {
@@ -60,7 +65,15 @@ public final class MinClusterVersionUtil {
         } else {
             version = IndexUtil.minimalRequiredVersionMap.get(key);
         }
-        return NeuralSearchClusterUtil.instance().getClusterMinVersion().onOrAfter(version);
+
+        // Handle case where version is null (unknown parameter)
+        // If parameter is unknown, return false to be conservative and avoid including potentially unsupported parameters
+        if (version == null) {
+            return false;
+        }
+
+        Version clusterMinVersion = NeuralSearchClusterUtil.instance().getClusterMinVersion();
+        return clusterMinVersion.onOrAfter(version);
     }
 
     /**

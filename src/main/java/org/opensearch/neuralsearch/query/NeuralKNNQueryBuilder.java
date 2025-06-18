@@ -19,7 +19,6 @@ import org.opensearch.knn.index.query.parser.KNNQueryBuilderParser;
 import org.opensearch.knn.index.query.parser.MethodParametersParser;
 import org.opensearch.knn.index.query.parser.RescoreParser;
 import org.opensearch.knn.index.query.rescore.RescoreContext;
-import org.opensearch.knn.index.util.IndexUtil;
 import org.opensearch.neuralsearch.common.MinClusterVersionUtil;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.core.common.ParsingException;
@@ -308,7 +307,9 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
      */
     @Override
     public void doWriteTo(StreamOutput out) throws IOException {
-        KNNQueryBuilderParser.streamOutput(out, knnQueryBuilder, IndexUtil::isClusterOnOrAfterMinRequiredVersion);
+        // Use neural-search's own version checking instead of k-NN plugin's
+        // This ensures consistent radial search parameter handling across all cluster nodes
+        KNNQueryBuilderParser.streamOutput(out, knnQueryBuilder, MinClusterVersionUtil::isClusterOnOrAfterMinReqVersion);
 
         if (MinClusterVersionUtil.isVersionOnOrAfterMinReqVersionForNeuralKNNQueryText(out.getVersion())) {
             out.writeOptionalString(originalQueryText);
@@ -323,8 +324,12 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
      */
     public NeuralKNNQueryBuilder(StreamInput in) throws IOException {
         super(in);
-        KNNQueryBuilder.Builder builder = KNNQueryBuilderParser.streamInput(in, IndexUtil::isClusterOnOrAfterMinRequiredVersion);
+
+        // Use neural-search's own version checking instead of k-NN plugin's
+        // This ensures consistent radial search parameter handling across all cluster nodes
+        KNNQueryBuilder.Builder builder = KNNQueryBuilderParser.streamInput(in, MinClusterVersionUtil::isClusterOnOrAfterMinReqVersion);
         this.knnQueryBuilder = builder.build();
+
         if (MinClusterVersionUtil.isVersionOnOrAfterMinReqVersionForNeuralKNNQueryText(in.getVersion())) {
             this.originalQueryText = in.readOptionalString();
         } else {
