@@ -35,6 +35,12 @@ public final class MinClusterVersionUtil {
         .put(MAX_DISTANCE_FIELD.getPreferredName(), MINIMAL_SUPPORTED_VERSION_RADIAL_SEARCH)
         .put(MIN_SCORE_FIELD.getPreferredName(), MINIMAL_SUPPORTED_VERSION_RADIAL_SEARCH)
         .put(QUERY_IMAGE_FIELD.getPreferredName(), MINIMAL_SUPPORTED_VERSION_QUERY_IMAGE_FIX)
+        // Fix for GitHub issue #1392: Ensure neural-search handles all k-NN parameters consistently
+        // This prevents intermittent failures across cluster nodes for all version-dependent parameters
+        .put("radial_search", MINIMAL_SUPPORTED_VERSION_RADIAL_SEARCH)  // min_score, max_distance
+        .put("method_parameters", Version.V_2_16_0)  // methodParameters (ef_search, etc.)
+        .put("rescore", Version.V_2_17_0)  // rescoreContext
+        .put("expand_nested_docs", MINIMAL_SUPPORTED_VERSION_PAGINATION_IN_HYBRID_QUERY)  // expandNested (v2.19.0)
         .build();
 
     public static boolean isClusterOnOrAfterMinReqVersionForDefaultDenseModelIdSupport() {
