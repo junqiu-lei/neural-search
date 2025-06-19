@@ -322,9 +322,7 @@ public class NeuralKNNQueryBuilder extends AbstractQueryBuilder<NeuralKNNQueryBu
      * @throws IOException If an I/O error occurs
      */
     public NeuralKNNQueryBuilder(StreamInput in) throws IOException {
-        super(in);
-        KNNQueryBuilder.Builder builder = KNNQueryBuilderParser.streamInput(in, IndexUtil::isClusterOnOrAfterMinRequiredVersion);
-        this.knnQueryBuilder = builder.build();
+        this.knnQueryBuilder = new KNNQueryBuilder(in);
         if (MinClusterVersionUtil.isVersionOnOrAfterMinReqVersionForNeuralKNNQueryText(in.getVersion())) {
             this.originalQueryText = in.readOptionalString();
         } else {
