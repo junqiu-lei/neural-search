@@ -837,10 +837,7 @@ public class NeuralQueryBuilder extends AbstractQueryBuilder<NeuralQueryBuilder>
     }
 
     QueryBuilder createKNNQueryBuilder(String fieldName, float[] vector) {
-        // Check if cluster supports NeuralKNNQueryBuilder (introduced in 3.0.0)
-        if (MinClusterVersionUtil.isClusterOnOrAfterMinReqVersionForNeuralKNNQueryBuilder()) {
-            // Use NeuralKNNQueryBuilder for version 3.0.0 and later
-            NeuralKNNQueryBuilder.Builder builder = NeuralKNNQueryBuilder.builder()
+        NeuralKNNQueryBuilder.Builder builder = NeuralKNNQueryBuilder.builder()
                 .fieldName(fieldName)
                 .vector(vector)
                 .filter(filter())
@@ -852,22 +849,7 @@ public class NeuralQueryBuilder extends AbstractQueryBuilder<NeuralQueryBuilder>
                 .maxDistance(maxDistance())
                 .minScore(minScore());
 
-            return builder.build();
-        } else {
-            // For versions before 3.0.0 (like 2.19.0), return KNNQueryBuilder
-            // to maintain backward compatibility during rolling upgrades
-            return KNNQueryBuilder.builder()
-                .fieldName(fieldName)
-                .vector(vector)
-                .filter(filter())
-                .maxDistance(maxDistance())
-                .minScore(minScore())
-                .expandNested(expandNested())
-                .k(k())
-                .methodParameters(methodParameters())
-                .rescoreContext(rescoreContext())
-                .build();
-        }
+        return builder.build();
     }
 
     private NeuralQueryBuilder createNeuralQueryBuilder(
