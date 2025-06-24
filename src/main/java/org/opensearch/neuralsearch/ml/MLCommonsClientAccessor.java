@@ -10,6 +10,7 @@ import static org.opensearch.neuralsearch.processor.TextImageEmbeddingProcessor.
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -469,37 +470,45 @@ public class MLCommonsClientAccessor {
         final ActionListener<Map<String, List<Map<String, Object>>>> listener
     ) {
         try {
-            // TODO: Create BatchHighlightingInputDataSet in ml-commons
-            // For now, using QuestionAnsweringInputDataSet as placeholder
-            // This will be replaced when ml-commons is updated
-            
-            // Note: This is a placeholder implementation that processes items sequentially
-            // The actual batch implementation requires ml-commons changes
-            Map<String, List<Map<String, Object>>> results = new ConcurrentHashMap<>();
-            AtomicInteger counter = new AtomicInteger(batchRequest.getItems().size());
-            AtomicBoolean hasError = new AtomicBoolean(false);
-            
+            // Create batch input for remote model
+            // The remote model expects a list of {question, context} pairs
+            List<Map<String, String>> batchInputs = new ArrayList<>();
+            Map<Integer, String> indexToDocIdMap = new HashMap<>();
+
+            int index = 0;
             for (BatchHighlightingRequest.HighlightingItem item : batchRequest.getItems()) {
-                SentenceHighlightingRequest singleRequest = SentenceHighlightingRequest.builder()
-                    .modelId(batchRequest.getModelId())
-                    .question(item.getQuestion())
-                    .context(item.getContext())
-                    .build();
-                
-                inferenceSentenceHighlighting(singleRequest, ActionListener.wrap(
-                    result -> {
-                        results.put(item.getDocumentId(), result);
-                        if (counter.decrementAndGet() == 0 && !hasError.get()) {
-                            listener.onResponse(results);
-                        }
-                    },
-                    e -> {
-                        hasError.set(true);
-                        listener.onFailure(new IllegalStateException(
-                            "Batch highlighting failed for document: " + item.getDocumentId(), e));
-                    }
-                ));
+                Map<String, String> input = new HashMap<>();
+                input.put("question", item.getQuestion());
+                input.put("context", item.getContext());
+                batchInputs.add(input);
+                indexToDocIdMap.put(index++, item.getDocumentId());
             }
+
+            // Create ML input for batch processing
+            // Using TextDocsInputDataSet with batch inputs as JSON string
+            String batchInputJson = convertBatchInputsToJson(batchInputs);
+            MLInputDataset inputDataset = new TextDocsInputDataSet(List.of(batchInputJson), null);
+            MLInput mlInput = new MLInput(FunctionName.REMOTE, null, inputDataset);
+
+            mlClient.predict(batchRequest.getModelId(), mlInput, ActionListener.wrap(mlOutput -> {
+                try {
+                    // Process batch output
+                    Map<String, List<Map<String, Object>>> results = processBatchHighlightingOutput(
+                        (ModelTensorOutput) mlOutput,
+                        indexToDocIdMap
+                    );
+                    listener.onResponse(results);
+                } catch (Exception e) {
+                    listener.onFailure(e);
+                }
+            },
+                e -> RetryUtil.handleRetryOrFailure(
+                    e,
+                    retryTime,
+                    () -> retryableInferenceBatchHighlighting(batchRequest, retryTime + 1, listener),
+                    listener
+                )
+            ));
         } catch (Exception e) {
             RetryUtil.handleRetryOrFailure(
                 e,
@@ -507,6 +516,102 @@ public class MLCommonsClientAccessor {
                 () -> retryableInferenceBatchHighlighting(batchRequest, retryTime + 1, listener),
                 listener
             );
+        }
+    }
+
+    /**
+     * Convert batch inputs to JSON string for remote model
+     */
+    private String convertBatchInputsToJson(List<Map<String, String>> batchInputs) {
+        try {
+            // Simple JSON conversion
+            StringBuilder json = new StringBuilder("[");
+            for (int i = 0; i < batchInputs.size(); i++) {
+                if (i > 0) json.append(",");
+                Map<String, String> input = batchInputs.get(i);
+                json.append("{")
+                    .append("\"question\":\"")
+                    .append(escapeJson(input.get("question")))
+                    .append("\",")
+                    .append("\"context\":\"")
+                    .append(escapeJson(input.get("context")))
+                    .append("\"")
+                    .append("}");
+            }
+            json.append("]");
+            return json.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to convert batch inputs to JSON", e);
+        }
+    }
+
+    /**
+     * Escape JSON string
+     */
+    private String escapeJson(String text) {
+        if (text == null) return "";
+        return text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+    }
+
+    /**
+     * Process batch highlighting output from remote model
+     */
+    private Map<String, List<Map<String, Object>>> processBatchHighlightingOutput(
+        ModelTensorOutput modelTensorOutput,
+        Map<Integer, String> indexToDocIdMap
+    ) {
+        Map<String, List<Map<String, Object>>> results = new HashMap<>();
+
+        try {
+            final List<ModelTensors> tensorOutputList = modelTensorOutput.getMlModelOutputs();
+
+            if (CollectionUtils.isEmpty(tensorOutputList)) {
+                // Return empty results for all documents
+                for (String docId : indexToDocIdMap.values()) {
+                    results.put(docId, new ArrayList<>());
+                }
+                return results;
+            }
+
+            // Process each tensor output
+            int outputIndex = 0;
+            for (ModelTensors tensors : tensorOutputList) {
+                List<ModelTensor> tensorsList = tensors.getMlModelTensors();
+
+                for (ModelTensor tensor : tensorsList) {
+                    // Check if this is a batch result
+                    Map<String, ?> dataMap = tensor.getDataAsMap();
+
+                    if (dataMap != null && dataMap.containsKey("results") && dataMap.get("results") instanceof List) {
+                        // Process batch results
+                        List<?> batchResults = (List<?>) dataMap.get("results");
+                        for (int i = 0; i < batchResults.size() && i < indexToDocIdMap.size(); i++) {
+                            String docId = indexToDocIdMap.get(i);
+                            if (batchResults.get(i) instanceof Map) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> resultMap = (Map<String, Object>) batchResults.get(i);
+                                results.put(docId, List.of(resultMap));
+                            }
+                        }
+                    } else if (outputIndex < indexToDocIdMap.size()) {
+                        // Single result for batch item
+                        String docId = indexToDocIdMap.get(outputIndex);
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> resultMap = (Map<String, Object>) dataMap;
+                        results.put(docId, List.of(resultMap));
+                        outputIndex++;
+                    }
+                }
+            }
+
+            // Ensure all documents have results (empty if not processed)
+            for (String docId : indexToDocIdMap.values()) {
+                results.putIfAbsent(docId, new ArrayList<>());
+            }
+
+            return results;
+        } catch (Exception e) {
+            throw new IllegalStateException("Error processing batch highlighting output", e);
         }
     }
 }

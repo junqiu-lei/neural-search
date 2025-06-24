@@ -151,13 +151,13 @@ public class SemanticHighlighterEngine {
      * @return Map of document IDs to their highlighted text
      */
     public Map<String, String> getHighlightedSentencesBatch(
-        String modelId, 
-        List<BatchHighlightingRequest.HighlightingItem> items, 
-        String preTag, 
+        String modelId,
+        List<BatchHighlightingRequest.HighlightingItem> items,
+        String preTag,
         String postTag
     ) {
         Map<String, List<Map<String, Object>>> batchResults = fetchBatchModelResults(modelId, items);
-        
+
         Map<String, String> highlightedTexts = new HashMap<>();
         for (BatchHighlightingRequest.HighlightingItem item : items) {
             List<Map<String, Object>> results = batchResults.get(item.getDocumentId());
@@ -168,7 +168,7 @@ public class SemanticHighlighterEngine {
                 highlightedTexts.put(item.getDocumentId(), null);
             }
         }
-        
+
         return highlightedTexts;
     }
 
@@ -216,27 +216,19 @@ public class SemanticHighlighterEngine {
      * @return Map of document IDs to highlighting results
      */
     public Map<String, List<Map<String, Object>>> fetchBatchModelResults(
-        String modelId, 
+        String modelId,
         List<BatchHighlightingRequest.HighlightingItem> items
     ) {
         PlainActionFuture<Map<String, List<Map<String, Object>>>> future = PlainActionFuture.newFuture();
 
-        BatchHighlightingRequest request = BatchHighlightingRequest.builder()
-            .modelId(modelId)
-            .items(items)
-            .build();
+        BatchHighlightingRequest request = BatchHighlightingRequest.builder().modelId(modelId).items(items).build();
 
         mlCommonsClient.inferenceBatchHighlighting(request, future);
 
         try {
             return future.actionGet();
         } catch (Exception e) {
-            log.error(
-                "Error during batch highlighting inference - modelId: [{}], batch size: [{}]",
-                modelId,
-                items.size(),
-                e
-            );
+            log.error("Error during batch highlighting inference - modelId: [{}], batch size: [{}]", modelId, items.size(), e);
             throw new OpenSearchException(
                 String.format(Locale.ROOT, "Error during batch highlighting inference from model [%s]", modelId),
                 e

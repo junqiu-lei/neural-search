@@ -52,7 +52,7 @@ As of Neural Search 3.0.0, the `MLCommonsClientAccessor` provides a unified API 
 ## Important: Commit Message Guidelines
 
 **NEVER include Claude attribution in commit messages**. Do not add:
-- "🤖 Generated with [Claude Code]" 
+- "🤖 Generated with [Claude Code]"
 - "Co-Authored-By: Claude"
 - Any other Claude-related attribution
 
@@ -70,7 +70,7 @@ Keep commit messages professional and focused only on the technical changes.
 ### Neural Search Plugin
 The neural-search plugin enables semantic search capabilities in OpenSearch using neural networks and vector embeddings.
 
-### k-NN Plugin  
+### k-NN Plugin
 The k-NN (k-Nearest Neighbors) plugin enables efficient similarity search for vectors in OpenSearch.
 
 ## Development Notes
@@ -502,7 +502,7 @@ The verified batch highlighting models are located at: `/home/junqiu/tracing_gpu
 | Single Document | No | `/_plugins/_ml/models/<model-id>/_predict` | Process one document at a time |
 | Batch Processing | Yes | `/_plugins/_ml/models/<model-id>/_predict` | Process multiple documents |
 
-**Note**: 
+**Note**:
 - Model IDs are deployment-specific
 - Batch size limits are configured at model deployment (e.g., 512)
 - No client-side batch size configuration needed

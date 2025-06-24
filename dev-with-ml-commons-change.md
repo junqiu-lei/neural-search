@@ -27,7 +27,7 @@ gradle
 dependencies {
     // ML Plugin
     zipArchive files("/path/to/ml-commons/artifacts/plugins/opensearch-ml-3.1.0.0-SNAPSHOT.zip")
-    
+
     // ML Client and Common JARs
     api files("/path/to/ml-commons/client/build/libs/opensearch-ml-client-3.1.0.0-SNAPSHOT.jar")
     api files('/path/to/ml-commons/build/libs/opensearch-ml-3.1.0.0-SNAPSHOT.jar')
@@ -105,4 +105,3 @@ Step 4: Build and Run
 Run the plugin:
 
 ./gradlew run
-
