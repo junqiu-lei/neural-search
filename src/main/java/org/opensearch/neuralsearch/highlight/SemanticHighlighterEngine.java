@@ -30,6 +30,7 @@ import java.util.Objects;
 @Builder
 public class SemanticHighlighterEngine {
     private static final String MODEL_ID_FIELD = "model_id";
+    private static final String USE_BATCH_FIELD = "use_batch";
     private static final String MODEL_INFERENCE_RESULT_KEY = "highlights";
     private static final String MODEL_INFERENCE_RESULT_START_KEY = "start";
     private static final String MODEL_INFERENCE_RESULT_END_KEY = "end";
@@ -105,6 +106,20 @@ public class SemanticHighlighterEngine {
             );
         }
         return (String) modelId;
+    }
+
+    /**
+     * Checks if batch mode is enabled from the options
+     *
+     * @param options The options map
+     * @return true if batch mode is enabled, false otherwise
+     */
+    public boolean isUseBatch(Map<String, Object> options) {
+        Object useBatch = options.get(USE_BATCH_FIELD);
+        if (useBatch instanceof Boolean) {
+            return (Boolean) useBatch;
+        }
+        return false; // Default to false if not specified or not a boolean
     }
 
     /**

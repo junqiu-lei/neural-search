@@ -13,6 +13,8 @@ import org.opensearch.search.fetch.subphase.highlight.HighlightField;
 import org.opensearch.search.fetch.subphase.highlight.Highlighter;
 import org.opensearch.core.common.text.Text;
 
+import java.util.Map;
+
 /**
  * Semantic highlighter that uses ML models to identify relevant text spans for highlighting
  */
@@ -53,8 +55,10 @@ public class SemanticHighlighter implements Highlighter {
         // Extract field text
         String fieldText = semanticHighlighterEngine.getFieldText(fieldContext);
 
-        // Get model ID
-        String modelId = semanticHighlighterEngine.getModelId(fieldContext.field.fieldOptions().options());
+        // Get model ID and check batch mode
+        Map<String, Object> options = fieldContext.field.fieldOptions().options();
+        String modelId = semanticHighlighterEngine.getModelId(options);
+        boolean useBatch = semanticHighlighterEngine.isUseBatch(options);
 
         // Try to extract query text
         String originalQueryText = semanticHighlighterEngine.extractOriginalQuery(fieldContext.query, fieldContext.fieldName);
@@ -68,14 +72,30 @@ public class SemanticHighlighter implements Highlighter {
         String[] preTags = fieldContext.field.fieldOptions().preTags();
         String[] postTags = fieldContext.field.fieldOptions().postTags();
 
-        // Get highlighted text - allow any exceptions from this call to propagate
-        String highlightedResponse = semanticHighlighterEngine.getHighlightedSentences(
-            modelId,
-            originalQueryText,
-            fieldText,
-            preTags[0],
-            postTags[0]
-        );
+        // Get highlighted text
+        String highlightedResponse;
+        if (useBatch) {
+            // TODO: Batch processing requires collecting multiple documents before processing
+            // For now, falling back to single document processing
+            // True batch processing would require changes to the Highlighter interface
+            // to process multiple fields at once
+            log.debug("Batch mode is enabled but processing single document due to interface constraints");
+            highlightedResponse = semanticHighlighterEngine.getHighlightedSentences(
+                modelId,
+                originalQueryText,
+                fieldText,
+                preTags[0],
+                postTags[0]
+            );
+        } else {
+            highlightedResponse = semanticHighlighterEngine.getHighlightedSentences(
+                modelId,
+                originalQueryText,
+                fieldText,
+                preTags[0],
+                postTags[0]
+            );
+        }
 
         if (highlightedResponse == null || highlightedResponse.isEmpty()) {
             log.warn("No highlighted text found for field {}", fieldContext.fieldName);
