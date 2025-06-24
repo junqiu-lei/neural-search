@@ -1,0 +1,63 @@
+version: '3'
+services:
+  opensearch-node1:
+    image: opensearchstaging/opensearch:3.1.0
+    container_name: opensearch-fix-node1
+    environment:
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch-node1
+      - discovery.seed_hosts=opensearch-node1,opensearch-node2
+      - cluster.initial_cluster_manager_nodes=opensearch-node1,opensearch-node2
+# Disabled for testing - bootstrap.memory_lock=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStrongPassword123!
+      - plugins.security.disabled=true
+      - bootstrap.memory_lock=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data1:/usr/share/opensearch/data
+      - ./docker-plugins/opensearch-neural-search:/usr/share/opensearch/plugins/opensearch-neural-search
+    ports:
+      - 9210:9200
+      - 9610:9600
+    networks:
+      - opensearch-net
+
+  opensearch-node2:
+    image: opensearchstaging/opensearch:3.1.0
+    container_name: opensearch-fix-node2
+    environment:
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch-node2
+      - discovery.seed_hosts=opensearch-node1,opensearch-node2
+      - cluster.initial_cluster_manager_nodes=opensearch-node1,opensearch-node2
+# Disabled for testing - bootstrap.memory_lock=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStrongPassword123!
+      - plugins.security.disabled=true
+      - bootstrap.memory_lock=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data2:/usr/share/opensearch/data
+      - ./docker-plugins/opensearch-neural-search:/usr/share/opensearch/plugins/opensearch-neural-search
+    networks:
+      - opensearch-net
+
+volumes:
+  opensearch-data1:
+  opensearch-data2:
+
+networks:
+  opensearch-net:

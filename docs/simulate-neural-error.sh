@@ -1,0 +1,31 @@
+#!/bin/bash
+
+echo "=== Simulating Neural Query Radial Search Error ==="
+echo ""
+echo "The exact error that occurs in production is:"
+echo '[knn] requires exactly one of k, distance or score to be set'
+echo ""
+echo "This happens when:"
+echo "1. A neural query with min_score/max_distance is sent"
+echo "2. NeuralQueryBuilder creates NeuralKNNQueryBuilder with k=null"
+echo "3. Builder.build() calls .k(k) even when k is null"
+echo "4. KNNQueryBuilder converts null to 0"
+echo "5. Query is serialized with k=0 + radial parameters"
+echo "6. On receiving node, validation fails"
+echo ""
+echo "Code evidence from main branch:"
+echo ""
+echo "NeuralKNNQueryBuilder.Builder.build() line 311:"
+echo "    .k(k)  // <-- This is called even when k is null!"
+echo ""
+echo "The fix in our branch only sets k when not null:"
+echo "    if (k != null) {"
+echo "        knnBuilderInstance.k(k);"
+echo "    }"
+echo ""
+echo "Without a full ML model setup, we can't trigger the exact error,"
+echo "but the code clearly shows the bug exists in the main branch."
+echo ""
+echo "The error would appear in logs like:"
+echo '[2025-06-19T10:23:45,123][ERROR][o.o.a.s.TransportSearchAction] [node2] all shards failed'
+echo 'org.opensearch.OpenSearchException: OpenSearchException[java.lang.IllegalArgumentException: [knn] requires exactly one of k, distance or score to be set]'

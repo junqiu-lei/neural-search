@@ -1,0 +1,29 @@
+Git Information for Issue #1331 Work
+====================================
+
+Repository: neural-search
+Branch: fix/issue-1331-search-template-ext-params
+Base Branch: main (from commit 2cccba5)
+
+Key Commits:
+-----------
+4532000 Add comprehensive work summary for issue #1331
+806754e Fix #1331: Add comprehensive solution for search template ext parameters issue
+f5ccdb7 Add documentation for issue #1331 investigation and next steps
+
+To recreate branch:
+------------------
+cd /home/junqiu/neural-search
+git checkout -b fix/issue-1331-search-template-ext-params 2cccba5
+git cherry-pick f5ccdb7 806754e 4532000
+
+Or to continue work:
+-------------------
+cd /home/junqiu/neural-search
+git checkout fix/issue-1331-search-template-ext-params
+
+Files changed:
+-------------
+- 18 files added/modified
+- Complete implementation, tests, and documentation
+- Ready for PR submission

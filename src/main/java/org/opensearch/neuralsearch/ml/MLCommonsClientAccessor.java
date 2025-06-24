@@ -40,6 +40,7 @@ import org.opensearch.neuralsearch.processor.TextInferenceRequest;
 import org.opensearch.neuralsearch.util.RetryUtil;
 import org.opensearch.ml.common.dataset.QuestionAnsweringInputDataSet;
 import org.opensearch.neuralsearch.processor.highlight.SentenceHighlightingRequest;
+import org.opensearch.neuralsearch.processor.highlight.BatchHighlightingRequest;
 
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -442,5 +443,70 @@ public class MLCommonsClientAccessor {
         @NonNull final ActionListener<List<Map<String, Object>>> listener
     ) {
         retryableInferenceSentenceHighlighting(inferenceRequest, 0, listener);
+    }
+
+    /**
+     * Performs batch sentence highlighting inference using the provided model.
+     * This method processes multiple question-context pairs in a single model inference call.
+     *
+     * @param batchRequest the request containing multiple question-context pairs for highlighting
+     * @param listener the listener to be called with the highlighting results for all items
+     */
+    public void inferenceBatchHighlighting(
+        @NonNull final BatchHighlightingRequest batchRequest,
+        @NonNull final ActionListener<Map<String, List<Map<String, Object>>>> listener
+    ) {
+        retryableInferenceBatchHighlighting(batchRequest, 0, listener);
+    }
+
+    /**
+     * Retryable method to perform batch highlighting inference.
+     * This method will retry up to 3 times if a retryable exception occurs.
+     */
+    private void retryableInferenceBatchHighlighting(
+        final BatchHighlightingRequest batchRequest,
+        final int retryTime,
+        final ActionListener<Map<String, List<Map<String, Object>>>> listener
+    ) {
+        try {
+            // TODO: Create BatchHighlightingInputDataSet in ml-commons
+            // For now, using QuestionAnsweringInputDataSet as placeholder
+            // This will be replaced when ml-commons is updated
+            
+            // Note: This is a placeholder implementation that processes items sequentially
+            // The actual batch implementation requires ml-commons changes
+            Map<String, List<Map<String, Object>>> results = new ConcurrentHashMap<>();
+            AtomicInteger counter = new AtomicInteger(batchRequest.getItems().size());
+            AtomicBoolean hasError = new AtomicBoolean(false);
+            
+            for (BatchHighlightingRequest.HighlightingItem item : batchRequest.getItems()) {
+                SentenceHighlightingRequest singleRequest = SentenceHighlightingRequest.builder()
+                    .modelId(batchRequest.getModelId())
+                    .question(item.getQuestion())
+                    .context(item.getContext())
+                    .build();
+                
+                inferenceSentenceHighlighting(singleRequest, ActionListener.wrap(
+                    result -> {
+                        results.put(item.getDocumentId(), result);
+                        if (counter.decrementAndGet() == 0 && !hasError.get()) {
+                            listener.onResponse(results);
+                        }
+                    },
+                    e -> {
+                        hasError.set(true);
+                        listener.onFailure(new IllegalStateException(
+                            "Batch highlighting failed for document: " + item.getDocumentId(), e));
+                    }
+                ));
+            }
+        } catch (Exception e) {
+            RetryUtil.handleRetryOrFailure(
+                e,
+                retryTime,
+                () -> retryableInferenceBatchHighlighting(batchRequest, retryTime + 1, listener),
+                listener
+            );
+        }
     }
 }

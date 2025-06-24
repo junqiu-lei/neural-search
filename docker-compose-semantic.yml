@@ -1,0 +1,71 @@
+version: '3'
+services:
+  opensearch-node1:
+    image: opensearchstaging/opensearch:3.1.0
+    container_name: opensearch-node1
+    environment:
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch-node1
+      - discovery.seed_hosts=opensearch-node1,opensearch-node2
+      - cluster.initial_cluster_manager_nodes=opensearch-node1,opensearch-node2
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStrongPassword123!
+      - plugins.security.disabled=true
+      - bootstrap.memory_lock=false
+      - plugins.ml_commons.only_run_on_ml_node=false
+      - plugins.ml_commons.ml_task_timeout_in_seconds=600
+      - plugins.ml_commons.model_access_control_enabled=false
+      - plugins.ml_commons.native_memory_threshold=90
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data1:/usr/share/opensearch/data
+      - ./docker-plugins/opensearch-neural-search:/usr/share/opensearch/plugins/opensearch-neural-search
+    ports:
+      - 9200:9200
+      - 9600:9600
+    networks:
+      - opensearch-net
+    mem_limit: 4g
+
+  opensearch-node2:
+    image: opensearchstaging/opensearch:3.1.0
+    container_name: opensearch-node2
+    environment:
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch-node2
+      - discovery.seed_hosts=opensearch-node1,opensearch-node2
+      - cluster.initial_cluster_manager_nodes=opensearch-node1,opensearch-node2
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStrongPassword123!
+      - plugins.security.disabled=true
+      - bootstrap.memory_lock=false
+      - plugins.ml_commons.only_run_on_ml_node=false
+      - plugins.ml_commons.ml_task_timeout_in_seconds=600
+      - plugins.ml_commons.model_access_control_enabled=false
+      - plugins.ml_commons.native_memory_threshold=90
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data2:/usr/share/opensearch/data
+      - ./docker-plugins/opensearch-neural-search:/usr/share/opensearch/plugins/opensearch-neural-search
+    networks:
+      - opensearch-net
+    mem_limit: 4g
+
+volumes:
+  opensearch-data1:
+  opensearch-data2:
+
+networks:
+  opensearch-net:
