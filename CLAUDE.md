@@ -500,14 +500,18 @@ The verified batch highlighting models are located at: `/home/junqiu/tracing_gpu
 | Model Type | Batch Support | API Pattern | Description |
 |------------|---------------|-------------|-------------|
 | Single Document | No | `/_plugins/_ml/models/<model-id>/_predict` | Process one document at a time |
-| Batch Processing | Yes | `/_plugins/_ml/models/<model-id>/_predict` | Process multiple documents (1-128+) |
+| Batch Processing | Yes | `/_plugins/_ml/models/<model-id>/_predict` | Process multiple documents |
 
-**Note**: The model IDs are deployment-specific. Reference implementation available at `/home/junqiu/tracing_gpu/batch_model/FINAL/`
+**Note**: 
+- Model IDs are deployment-specific
+- Batch size limits are configured at model deployment (e.g., 512)
+- No client-side batch size configuration needed
+- Reference implementation: `/home/junqiu/tracing_gpu/batch_model/FINAL/`
 
 ### Model Architecture
 - **Base Model**: BERT-based (`bert-base-uncased`)
 - **Task**: Sentence-level semantic highlighting
-- **Batch Support**: True dynamic batching (1-128 documents)
+- **Batch Support**: True dynamic batching (limit set at model deployment)
 - **Performance**: ~8ms per document in batch mode
 - **Format**: TorchScript (PyTorch JIT)
 
@@ -545,10 +549,9 @@ curl -X POST "http://<opensearch-host>/_plugins/_ml/models/<batch-model-id>/_pre
 - Each highlight includes: `text`, `start`, `end`, `score`, `position`
 
 ### Performance Guidelines
-- **Optimal batch size**: 10-50 documents
-- **Max batch size**: 128 documents
+- **Batch size**: Determined by model configuration
 - **Context length**: Keep under 512 tokens
-- **Timeout**: Set to 60+ seconds for large batches
+- **Timeout**: Set appropriately for expected batch sizes
 
 ## Checking ML Models in OpenSearch
 

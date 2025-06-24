@@ -34,15 +34,15 @@ This document outlines the design for implementing batch semantic highlighting i
 ### 3.3 Model Capabilities
 
 #### Batch Model Requirements
-| Model Type | Batch Support | Max Batch Size | Expected Performance |
-|------------|---------------|----------------|---------------------|
+| Model Type | Batch Support | Batch Size | Expected Performance |
+|------------|---------------|------------|---------------------|
 | Single Document | No | 1 | ~50-100ms |
-| Batch Processing | Yes | 128+ (configurable) | ~8ms per doc |
+| Batch Processing | Yes | Configurable (model-side) | ~8ms per doc |
 
 #### Technical Specifications
 - **Architecture**: BERT-based models (e.g., `bert-base-uncased`)
-- **Dynamic Batching**: Must support 1-128+ documents without recompilation
-- **Batch Size**: Configurable limit (recommended default: 128)
+- **Dynamic Batching**: Supports variable batch sizes without recompilation
+- **Batch Size**: Configured at model deployment (e.g., 512)
 - **Model Format**: TorchScript for deployment flexibility
 - **Reference Implementation**: `/home/junqiu/tracing_gpu/batch_model/FINAL/`
 
@@ -207,7 +207,7 @@ sequenceDiagram
     
     SemanticHighlighter->>MLCommonsClient: BatchHighlightingRequest<br/>(items: [{q1,c1}, {q2,c2}, ...])
     
-    MLCommonsClient->>Model: Batch Inference<br/>(up to 128 docs)
+    MLCommonsClient->>Model: Batch Inference<br/>(batch size per model config)
     
     Model-->>MLCommonsClient: Batch Results<br/>[{highlights1}, {highlights2}, ...]
     
@@ -229,9 +229,7 @@ sequenceDiagram
     },
     "options": {
       "model_id": "<your-batch-model-id>",
-      "use_batch": true,
-      "batch_size": 50,      // optional, default 10, max 128
-      "batch_timeout_ms": 100 // optional, collection timeout
+      "use_batch": true
     }
   }
 }
@@ -288,10 +286,9 @@ stateDiagram-v2
     
     Idle --> Collecting: First document arrives<br/>with use_batch=true
     
-    Collecting --> Collecting: Add document<br/>(size < batch_size)
+    Collecting --> Collecting: Add document
     
-    Collecting --> ProcessBatch: Batch full<br/>(size = batch_size)
-    Collecting --> ProcessBatch: Timeout reached<br/>(batch_timeout_ms)
+    Collecting --> ProcessBatch: All documents collected
     Collecting --> ProcessBatch: Last document<br/>in search results
     
     ProcessBatch --> SendToModel: Create BatchHighlightingRequest
@@ -308,7 +305,7 @@ stateDiagram-v2
 
 ## 8. Error Handling
 
-1. **Batch Size Limits**: Automatically split large batches based on model limits (max 128)
+1. **Batch Size**: Respect model-configured limits (no client-side limit needed)
 2. **Model Compatibility**: Gracefully fall back to single processing if model doesn't support batch
 3. **Partial Failures**: Return results for successful items, log failures
 4. **Timeout Handling**: Process partial batch if timeout is reached
@@ -323,12 +320,12 @@ stateDiagram-v2
 ### 9.2 Integration Tests
 - Test with local models
 - Test with remote models (including deployed models)
-- Test batch size limits (1-128 documents)
+- Test various batch sizes based on model configuration
 - Test mixed batch/single requests
 
 ### 9.3 Performance Tests
 - Benchmark batch vs single processing
-- Test various batch sizes (1, 10, 50, 100, 128)
+- Test various batch sizes (1, 10, 50, 100, 200+)
 - Measure memory usage
 - Validate ~8ms per document performance
 
@@ -341,7 +338,7 @@ stateDiagram-v2
 
 ## 11. Security Considerations
 
-- Batch size limits to prevent DoS (configurable, default 128)
+- Model-side batch size limits prevent DoS
 - Authentication/authorization applies to entire batch
 - Input validation for all batch items
 - Memory limits for batch collection
@@ -360,14 +357,14 @@ stateDiagram-v2
 2. **Reliability**: No increase in error rates
 3. **Adoption**: Smooth migration with backward compatibility
 4. **Resource Usage**: Reduced CPU/memory usage per document
-5. **Scalability**: Support for configurable batch sizes up to 128+ documents
+5. **Scalability**: Support for model-configured batch sizes
 
 ## 14. Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | Model doesn't support batch | High | Implement model capability detection |
-| Large batch causes OOM | High | Implement batch size limits |
+| Large batch causes OOM | High | Model-side limits, client memory monitoring |
 | Network timeout for large batches | Medium | Implement request timeout configuration |
 | Backward compatibility | High | use_batch flag with default false |
 
@@ -380,10 +377,9 @@ stateDiagram-v2
 
 ## 16. Open Questions
 
-1. Should we implement automatic batch size optimization?
-2. How to handle very large documents that exceed model context?
-3. Should batch processing be configurable per index?
-4. Should the 128 document limit be user-configurable?
+1. How to handle very large documents that exceed model context?
+2. Should batch processing be configurable per index?
+3. Should we add request-level timeout configuration?
 
 ## 17. Appendix: Production Model Details
 
@@ -408,10 +404,7 @@ graph LR
 ```
 
 ### Configuration Options
-| Parameter | Default | Min | Max | Description |
-|-----------|---------|-----|-----|-------------|
-| `use_batch` | false | - | - | Enable batch processing |
-| `batch_size` | 10 | 1 | 128* | Documents per batch |
-| `batch_timeout_ms` | 100 | 10 | 5000 | Collection timeout |
-
-*Note: 128 is the current model limit but is configurable in the model deployment
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `use_batch` | false | Enable batch processing |
+| `model_id` | required | Model ID for highlighting |

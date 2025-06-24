@@ -25,9 +25,7 @@ POST /medical-documents/_search
     },
     "options": {
       "model_id": "your-highlighting-model-id",
-      "use_batch": true,
-      "batch_size": 10,
-      "batch_timeout_ms": 100
+      "use_batch": true
     }
   }
 }
@@ -89,9 +87,10 @@ POST /medical-documents/_search
 
 ### Batch Processing (use_batch: true)
 - Multiple documents processed in single ML inference call
-- Lower latency: ~5-10ms per document
+- Lower latency: ~8ms per document
 - Parallel processing by the model
 - Requires batch-capable model
+- Batch size determined by model configuration
 
 ## Model Requirements
 
@@ -143,15 +142,13 @@ POST /medical-documents/_search
 |--------|------|---------|-------------|
 | `model_id` | string | required | The ML model ID for highlighting |
 | `use_batch` | boolean | false | Enable batch processing |
-| `batch_size` | integer | 10 | Maximum documents per batch |
-| `batch_timeout_ms` | integer | 100 | Max wait time for batch collection |
 
 ## Performance Considerations
 
-1. **Batch Size**: Larger batches improve throughput but increase latency
-2. **Timeout**: Lower timeout reduces wait time but may result in smaller batches
-3. **Model Capacity**: Ensure model can handle configured batch size
-4. **Memory**: Batch processing uses more memory to collect documents
+1. **Model Configuration**: Batch size limits are set at model deployment
+2. **Network Latency**: Consider network overhead for large batches
+3. **Memory**: Batch processing uses more memory to collect documents
+4. **Document Size**: Keep individual documents within model context limits
 
 ## Error Handling
 
@@ -169,11 +166,11 @@ When some documents in a batch fail:
 
 ## Best Practices
 
-1. **Start Small**: Begin with small batch sizes (5-10) and increase gradually
+1. **Model Testing**: Ensure your model supports batch processing before enabling
 2. **Monitor Performance**: Track batch processing metrics
-3. **Model Testing**: Ensure your model supports batch processing before enabling
-4. **Timeout Tuning**: Adjust timeout based on query patterns
-5. **Error Monitoring**: Set up alerts for batch processing failures
+3. **Error Monitoring**: Set up alerts for batch processing failures
+4. **Document Context**: Keep documents within model's context window
+5. **Resource Monitoring**: Watch memory usage during batch collection
 
 ## Troubleshooting
 
@@ -181,18 +178,18 @@ When some documents in a batch fail:
 
 1. **No Performance Improvement**
    - Check if model actually supports batch processing
-   - Verify batch_size is appropriate
+   - Verify use_batch is set to true
    - Check network latency to model endpoint
 
-2. **Timeouts**
-   - Increase batch_timeout_ms
-   - Reduce batch_size
-   - Check model response time
-
-3. **Memory Issues**
-   - Reduce batch_size
-   - Monitor heap usage
+2. **Memory Issues**
+   - Monitor heap usage during batch collection
    - Consider increasing JVM heap size
+   - Check for memory leaks in custom implementations
+
+3. **Model Errors**
+   - Verify model supports the batch format
+   - Check model's configured batch size limit
+   - Review model logs for specific errors
 
 ### Debug Logging
 
