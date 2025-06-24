@@ -88,14 +88,23 @@ POST /index/_search
 ## Next Steps
 
 1. **Review Design**: Get team feedback on design document
-2. **ML Commons Implementation**: 
-   - Implement `BatchHighlightingInputDataSet`
-   - Fix parameter serialization
-3. **Complete Neural Search Integration**:
-   - Implement batch collection
-   - Add performance metrics
-4. **Testing**: Execute test plan
+2. **Choose Implementation Approach** (flexible options):
+   - **Option A**: ML Commons changes for proper batch dataset support
+   - **Option B**: Neural Search plugin with custom batch handling
+   - **Option C**: Model-side changes for better compatibility
+3. **Implementation**:
+   - Based on chosen approach, implement necessary changes
+   - Leverage existing production models (IDs in CLAUDE.md)
+4. **Testing**: Execute test plan with production models
 5. **Performance Tuning**: Optimize based on benchmarks
+
+## Available Resources
+
+- **Production Models**: Already deployed at `/home/junqiu/tracing_gpu/batch_model/FINAL/`
+  - Single: `c7DtopcBzGk_n9nPCKO9`
+  - Batch: `5KHtopcBJ3g2K0lQM9Nx`
+- **Verified Performance**: ~8ms per document in batch mode
+- **Dynamic Batch Support**: 1-128 documents without recompilation
 
 ## Technical Challenges
 
