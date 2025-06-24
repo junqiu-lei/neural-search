@@ -9,6 +9,7 @@ import org.apache.lucene.search.Query;
 import org.opensearch.OpenSearchException;
 import org.opensearch.neuralsearch.ml.MLCommonsClientAccessor;
 import org.opensearch.neuralsearch.processor.highlight.SentenceHighlightingRequest;
+import org.opensearch.neuralsearch.processor.highlight.BatchHighlightingRequest;
 import org.opensearch.search.fetch.subphase.highlight.FieldHighlightContext;
 import org.opensearch.neuralsearch.highlight.extractor.QueryTextExtractorRegistry;
 import org.opensearch.action.support.PlainActionFuture;
@@ -16,6 +17,7 @@ import lombok.NonNull;
 import lombok.Builder;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -125,6 +127,37 @@ public class SemanticHighlighterEngine {
     }
 
     /**
+     * Gets highlighted text from the ML model for multiple documents in batch
+     *
+     * @param modelId The ID of the model to use
+     * @param items List of documents with their questions and contexts
+     * @param preTag The pre tag to use for highlighting
+     * @param postTag The post tag to use for highlighting
+     * @return Map of document IDs to their highlighted text
+     */
+    public Map<String, String> getHighlightedSentencesBatch(
+        String modelId, 
+        List<BatchHighlightingRequest.HighlightingItem> items, 
+        String preTag, 
+        String postTag
+    ) {
+        Map<String, List<Map<String, Object>>> batchResults = fetchBatchModelResults(modelId, items);
+        
+        Map<String, String> highlightedTexts = new HashMap<>();
+        for (BatchHighlightingRequest.HighlightingItem item : items) {
+            List<Map<String, Object>> results = batchResults.get(item.getDocumentId());
+            if (results != null && !results.isEmpty()) {
+                String highlighted = applyHighlighting(item.getContext(), results.getFirst(), preTag, postTag);
+                highlightedTexts.put(item.getDocumentId(), highlighted);
+            } else {
+                highlightedTexts.put(item.getDocumentId(), null);
+            }
+        }
+        
+        return highlightedTexts;
+    }
+
+    /**
      * Fetches highlighting results from the ML model
      *
      * @param modelId The ID of the model to use
@@ -155,6 +188,42 @@ public class SemanticHighlighterEngine {
             );
             throw new OpenSearchException(
                 String.format(Locale.ROOT, "Error during sentence highlighting inference from model [%s]", modelId),
+                e
+            );
+        }
+    }
+
+    /**
+     * Fetches batch highlighting results from the ML model
+     *
+     * @param modelId The ID of the model to use
+     * @param items List of items containing questions and contexts
+     * @return Map of document IDs to highlighting results
+     */
+    public Map<String, List<Map<String, Object>>> fetchBatchModelResults(
+        String modelId, 
+        List<BatchHighlightingRequest.HighlightingItem> items
+    ) {
+        PlainActionFuture<Map<String, List<Map<String, Object>>>> future = PlainActionFuture.newFuture();
+
+        BatchHighlightingRequest request = BatchHighlightingRequest.builder()
+            .modelId(modelId)
+            .items(items)
+            .build();
+
+        mlCommonsClient.inferenceBatchHighlighting(request, future);
+
+        try {
+            return future.actionGet();
+        } catch (Exception e) {
+            log.error(
+                "Error during batch highlighting inference - modelId: [{}], batch size: [{}]",
+                modelId,
+                items.size(),
+                e
+            );
+            throw new OpenSearchException(
+                String.format(Locale.ROOT, "Error during batch highlighting inference from model [%s]", modelId),
                 e
             );
         }
