@@ -31,20 +31,20 @@ This document outlines the design for implementing batch semantic highlighting i
 - Batch processing (verified with production models): ~8ms per document
 - Actual improvement: 6-12x faster with batch processing
 
-### 3.3 Production Models
+### 3.3 Model Capabilities
 
-#### Deployed Models
-| Model Type | Model ID | Max Batch Size | Performance |
-|------------|----------|----------------|-------------|
-| Single Document | `c7DtopcBzGk_n9nPCKO9` | 1 | ~50-100ms |
-| Batch Processing | `5KHtopcBJ3g2K0lQM9Nx` | 128 (configurable) | ~8ms per doc |
+#### Batch Model Requirements
+| Model Type | Batch Support | Max Batch Size | Expected Performance |
+|------------|---------------|----------------|---------------------|
+| Single Document | No | 1 | ~50-100ms |
+| Batch Processing | Yes | 128+ (configurable) | ~8ms per doc |
 
-#### Model Capabilities
-- **Architecture**: BERT-based (`bert-base-uncased`)
-- **Dynamic Batching**: Supports 1-128 documents without recompilation
-- **Batch Size**: Configurable limit (default 128, can be increased)
-- **Location**: `/home/junqiu/tracing_gpu/batch_model/FINAL/`
-- **Deployment**: SageMaker endpoint (ml.g4dn.xlarge)
+#### Technical Specifications
+- **Architecture**: BERT-based models (e.g., `bert-base-uncased`)
+- **Dynamic Batching**: Must support 1-128+ documents without recompilation
+- **Batch Size**: Configurable limit (recommended default: 128)
+- **Model Format**: TorchScript for deployment flexibility
+- **Reference Implementation**: `/home/junqiu/tracing_gpu/batch_model/FINAL/`
 
 ## 4. Proposed Architecture
 
@@ -228,7 +228,7 @@ sequenceDiagram
       }
     },
     "options": {
-      "model_id": "5KHtopcBJ3g2K0lQM9Nx",  // Batch model ID
+      "model_id": "<your-batch-model-id>",
       "use_batch": true,
       "batch_size": 50,      // optional, default 10, max 128
       "batch_timeout_ms": 100 // optional, collection timeout
@@ -335,7 +335,7 @@ stateDiagram-v2
 ## 10. Migration Path
 
 1. **Phase 1**: Implement batch support with use_batch flag (default: false)
-2. **Phase 2**: Test with production models (`5KHtopcBJ3g2K0lQM9Nx`)
+2. **Phase 2**: Test with batch-capable models
 3. **Phase 3**: Optimize batch sizes based on workload
 4. **Phase 4**: Consider making batch default for compatible models
 
@@ -387,10 +387,10 @@ stateDiagram-v2
 
 ## 17. Appendix: Production Model Details
 
-### Model Endpoints
-- **Base URL**: `http://opense-clust-nIQATX97fqm6-8bdfbdc697bcfcd5.elb.us-east-2.amazonaws.com`
-- **Single API**: `/_plugins/_ml/models/c7DtopcBzGk_n9nPCKO9/_predict`
-- **Batch API**: `/_plugins/_ml/models/5KHtopcBJ3g2K0lQM9Nx/_predict`
+### Model API Patterns
+- **Single Document API**: `/_plugins/_ml/models/<single-model-id>/_predict`
+- **Batch API**: `/_plugins/_ml/models/<batch-model-id>/_predict`
+- **Input Format**: Both use same API structure, batch model accepts array
 
 ### Model Performance Characteristics
 ```mermaid

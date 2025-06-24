@@ -25,6 +25,3 @@ bin/
 
 # git stuff
 .gitattributes
-
-# Project-specific
-CLAUDE.md
