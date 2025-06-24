@@ -4,12 +4,20 @@
 
 This document outlines the design for implementing batch semantic highlighting in OpenSearch, which allows processing multiple documents in a single ML model inference call for improved performance.
 
+### 1.1 Document Structure
+- **Section 1-3**: Background and current state
+- **Section 4-6**: Proposed architecture and implementation
+- **Section 7-9**: API design and error handling
+- **Section 10-12**: Testing, migration, and security
+- **Section 13-15**: Future work and appendices
+
 ## 2. Goals
 
 1. **Performance**: Reduce latency by processing multiple documents in a single model inference call
 2. **Compatibility**: Support both batch and single-document processing with backward compatibility
 3. **Flexibility**: Support both remote (SageMaker) and local ML models
 4. **Clean Architecture**: Remove parallel processing complexity in favor of true batch processing
+5. **Scalability**: Support configurable batch sizes (1-128+ documents)
 
 ## 3. Current State Analysis
 
@@ -22,32 +30,53 @@ This document outlines the design for implementing batch semantic highlighting i
 - Single document processing: ~50-100ms per document
 - Batch processing (verified with production models): ~8ms per document
 - Actual improvement: 6-12x faster with batch processing
-- Production models deployed and ready:
-  - Single: `c7DtopcBzGk_n9nPCKO9`
-  - Batch: `5KHtopcBJ3g2K0lQM9Nx`
-  - Location: `/home/junqiu/tracing_gpu/batch_model/FINAL/`
+
+### 3.3 Production Models
+
+#### Deployed Models
+| Model Type | Model ID | Max Batch Size | Performance |
+|------------|----------|----------------|-------------|
+| Single Document | `c7DtopcBzGk_n9nPCKO9` | 1 | ~50-100ms |
+| Batch Processing | `5KHtopcBJ3g2K0lQM9Nx` | 128 (configurable) | ~8ms per doc |
+
+#### Model Capabilities
+- **Architecture**: BERT-based (`bert-base-uncased`)
+- **Dynamic Batching**: Supports 1-128 documents without recompilation
+- **Batch Size**: Configurable limit (default 128, can be increased)
+- **Location**: `/home/junqiu/tracing_gpu/batch_model/FINAL/`
+- **Deployment**: SageMaker endpoint (ml.g4dn.xlarge)
 
 ## 4. Proposed Architecture
 
 ### 4.1 High-Level Flow
-```
-Search Request with Semantic Highlighting
-    ↓
-SemanticHighlightActionFilter (intercepts request)
-    ↓
-Check use_batch flag (default: false)
-    ↓
-If use_batch=true:
-    ↓
-Collect all documents needing highlighting
-    ↓
-Create BatchHighlightingRequest
-    ↓
-MLCommonsClientAccessor.inferenceBatchHighlighting()
-    ↓
-ML Commons processes batch request
-    ↓
-Return highlighted results
+
+```mermaid
+flowchart TD
+    A[Search Request with Semantic Highlighting] --> B{Check Highlight Type}
+    B -->|type=semantic| C[SemanticHighlighter]
+    B -->|other| D[Standard Highlighter]
+    
+    C --> E{Check use_batch flag}
+    E -->|false<br/>default| F[Single Document Processing]
+    E -->|true| G[Batch Document Collection]
+    
+    F --> H[SentenceHighlightingRequest]
+    G --> I[BatchHighlightingRequest]
+    
+    H --> J[MLCommonsClientAccessor<br/>inferenceSentenceHighlighting]
+    I --> K[MLCommonsClientAccessor<br/>inferenceBatchHighlighting]
+    
+    J --> L{Model Type}
+    K --> L
+    
+    L -->|Local| M[Local Model Inference]
+    L -->|Remote| N[Remote Model Inference<br/>via Connector]
+    
+    M --> O[Process Results]
+    N --> O
+    
+    O --> P[Apply Highlighting Tags]
+    P --> Q[Return Highlighted Results]
 ```
 
 ### 4.2 Component Changes
@@ -84,13 +113,62 @@ Return highlighted results
 
 ## 5. Implementation Details
 
-### 5.1 Batch Request Format
+### 5.1 Class Hierarchy (Neural Search 3.0.0+)
+
+```mermaid
+classDiagram
+    class InferenceRequest {
+        <<abstract>>
+        -String modelId
+        -List~String~ targetResponseFilters
+    }
+    
+    class SentenceHighlightingRequest {
+        -String question
+        -String context
+    }
+    
+    class BatchHighlightingRequest {
+        -List~HighlightingItem~ items
+    }
+    
+    class HighlightingItem {
+        -String documentId
+        -String question  
+        -String context
+    }
+    
+    class TextInferenceRequest {
+        -List~String~ inputTexts
+    }
+    
+    class MapInferenceRequest {
+        -Map~String,String~ inputObjects
+    }
+    
+    InferenceRequest <|-- SentenceHighlightingRequest
+    InferenceRequest <|-- BatchHighlightingRequest
+    InferenceRequest <|-- TextInferenceRequest
+    InferenceRequest <|-- MapInferenceRequest
+    
+    BatchHighlightingRequest *-- HighlightingItem
+```
+
+### 5.2 Batch Request Format
 
 ```java
-public class BatchHighlightingRequest {
-    private String modelId;
+@SuperBuilder
+@NoArgsConstructor
+@Getter
+@Setter
+public class BatchHighlightingRequest extends InferenceRequest {
     private List<HighlightingItem> items;
     
+    @Builder
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @Getter
+    @Setter
     public static class HighlightingItem {
         private String documentId;  // for result correlation
         private String question;
@@ -112,7 +190,34 @@ public class BatchHighlightingInputDataSet extends MLInputDataset {
 }
 ```
 
-### 5.3 Configuration
+### 5.3 Batch Processing Sequence
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant OpenSearch
+    participant SemanticHighlighter
+    participant MLCommonsClient
+    participant Model
+    
+    Client->>OpenSearch: Search Request<br/>with use_batch=true
+    OpenSearch->>SemanticHighlighter: Process highlights<br/>for N documents
+    
+    Note over SemanticHighlighter: Collect documents<br/>into batches
+    
+    SemanticHighlighter->>MLCommonsClient: BatchHighlightingRequest<br/>(items: [{q1,c1}, {q2,c2}, ...])
+    
+    MLCommonsClient->>Model: Batch Inference<br/>(up to 128 docs)
+    
+    Model-->>MLCommonsClient: Batch Results<br/>[{highlights1}, {highlights2}, ...]
+    
+    MLCommonsClient-->>SemanticHighlighter: Map<docId, highlights>
+    
+    SemanticHighlighter-->>OpenSearch: Highlighted documents
+    OpenSearch-->>Client: Search response<br/>with highlights
+```
+
+### 5.4 Configuration
 
 ```json
 {
@@ -123,9 +228,10 @@ public class BatchHighlightingInputDataSet extends MLInputDataset {
       }
     },
     "options": {
-      "model_id": "model-id-here",
+      "model_id": "5KHtopcBJ3g2K0lQM9Nx",  // Batch model ID
       "use_batch": true,
-      "batch_size": 10  // optional, default based on model
+      "batch_size": 50,      // optional, default 10, max 128
+      "batch_timeout_ms": 100 // optional, collection timeout
     }
   }
 }
@@ -174,57 +280,89 @@ POST /index/_search
 }
 ```
 
-## 7. Error Handling
+## 7. Batch Collection Strategy
 
-1. **Batch Size Limits**: Automatically split large batches based on model limits
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    
+    Idle --> Collecting: First document arrives<br/>with use_batch=true
+    
+    Collecting --> Collecting: Add document<br/>(size < batch_size)
+    
+    Collecting --> ProcessBatch: Batch full<br/>(size = batch_size)
+    Collecting --> ProcessBatch: Timeout reached<br/>(batch_timeout_ms)
+    Collecting --> ProcessBatch: Last document<br/>in search results
+    
+    ProcessBatch --> SendToModel: Create BatchHighlightingRequest
+    
+    SendToModel --> Success: Model returns results
+    SendToModel --> Failure: Model error
+    
+    Success --> ApplyHighlights: Map results to documents
+    Failure --> FallbackSingle: Process individually
+    
+    ApplyHighlights --> Idle: Complete
+    FallbackSingle --> Idle: Complete
+```
+
+## 8. Error Handling
+
+1. **Batch Size Limits**: Automatically split large batches based on model limits (max 128)
 2. **Model Compatibility**: Gracefully fall back to single processing if model doesn't support batch
 3. **Partial Failures**: Return results for successful items, log failures
+4. **Timeout Handling**: Process partial batch if timeout is reached
 
-## 8. Testing Strategy
+## 9. Testing Strategy
 
-### 8.1 Unit Tests
+### 9.1 Unit Tests
 - Test batch request creation
 - Test batch response parsing
 - Test error scenarios
 
-### 8.2 Integration Tests
+### 9.2 Integration Tests
 - Test with local models
-- Test with remote models
-- Test batch size limits
+- Test with remote models (including deployed models)
+- Test batch size limits (1-128 documents)
 - Test mixed batch/single requests
 
-### 8.3 Performance Tests
+### 9.3 Performance Tests
 - Benchmark batch vs single processing
-- Test various batch sizes
+- Test various batch sizes (1, 10, 50, 100, 128)
 - Measure memory usage
+- Validate ~8ms per document performance
 
-## 9. Migration Path
+## 10. Migration Path
 
 1. **Phase 1**: Implement batch support with use_batch flag (default: false)
-2. **Phase 2**: Test and optimize batch processing
-3. **Phase 3**: Consider making batch default for compatible models
+2. **Phase 2**: Test with production models (`5KHtopcBJ3g2K0lQM9Nx`)
+3. **Phase 3**: Optimize batch sizes based on workload
+4. **Phase 4**: Consider making batch default for compatible models
 
-## 10. Security Considerations
+## 11. Security Considerations
 
-- Batch size limits to prevent DoS
+- Batch size limits to prevent DoS (configurable, default 128)
 - Authentication/authorization applies to entire batch
 - Input validation for all batch items
+- Memory limits for batch collection
 
-## 11. Future Enhancements
+## 12. Future Enhancements
 
 1. **Dynamic Batching**: Automatically batch requests within a time window
 2. **Model-Specific Optimization**: Different batch sizes for different models
 3. **Caching**: Cache highlighting results for frequently accessed content
 4. **Streaming**: Support streaming batch responses for large result sets
+5. **Adaptive Batch Sizing**: Adjust batch size based on system load
 
-## 12. Success Metrics
+## 13. Success Metrics
 
-1. **Performance**: 5-10x improvement in highlighting latency
+1. **Performance**: 6-12x improvement in highlighting latency (verified: ~8ms per document)
 2. **Reliability**: No increase in error rates
 3. **Adoption**: Smooth migration with backward compatibility
 4. **Resource Usage**: Reduced CPU/memory usage per document
+5. **Scalability**: Support for configurable batch sizes up to 128+ documents
 
-## 13. Risks and Mitigations
+## 14. Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
@@ -233,15 +371,47 @@ POST /index/_search
 | Network timeout for large batches | Medium | Implement request timeout configuration |
 | Backward compatibility | High | use_batch flag with default false |
 
-## 14. Timeline
+## 15. Timeline
 
 1. **Week 1**: Neural Search plugin changes
-2. **Week 2**: ML Commons plugin changes
-3. **Week 3**: Integration and testing
+2. **Week 2**: ML Commons plugin changes (if needed)
+3. **Week 3**: Integration and testing with production models
 4. **Week 4**: Documentation and rollout
 
-## 15. Open Questions
+## 16. Open Questions
 
 1. Should we implement automatic batch size optimization?
 2. How to handle very large documents that exceed model context?
 3. Should batch processing be configurable per index?
+4. Should the 128 document limit be user-configurable?
+
+## 17. Appendix: Production Model Details
+
+### Model Endpoints
+- **Base URL**: `http://opense-clust-nIQATX97fqm6-8bdfbdc697bcfcd5.elb.us-east-2.amazonaws.com`
+- **Single API**: `/_plugins/_ml/models/c7DtopcBzGk_n9nPCKO9/_predict`
+- **Batch API**: `/_plugins/_ml/models/5KHtopcBJ3g2K0lQM9Nx/_predict`
+
+### Model Performance Characteristics
+```mermaid
+graph LR
+    subgraph "Single Document Model"
+        A[1 doc] -->|50-100ms| B[Result]
+    end
+    
+    subgraph "Batch Model (Dynamic)"
+        C[1 doc] -->|~8ms| D[Result]
+        E[10 docs] -->|~80ms| F[Results]
+        G[50 docs] -->|~400ms| H[Results]
+        I[128 docs] -->|~1024ms| J[Results]
+    end
+```
+
+### Configuration Options
+| Parameter | Default | Min | Max | Description |
+|-----------|---------|-----|-----|-------------|
+| `use_batch` | false | - | - | Enable batch processing |
+| `batch_size` | 10 | 1 | 128* | Documents per batch |
+| `batch_timeout_ms` | 100 | 10 | 5000 | Collection timeout |
+
+*Note: 128 is the current model limit but is configurable in the model deployment
