@@ -18,10 +18,14 @@ This document outlines the design for implementing batch semantic highlighting i
 - ML Commons sends parameters as JSON strings, but SageMaker expects JSON objects
 - Parameter format mismatch: `{"batch": "[{...}]"}` vs `{"parameters": {"batch": [{...}]}}`
 
-### 3.2 Performance Benchmarks
+### 3.2 Performance Benchmarks  
 - Single document processing: ~50-100ms per document
-- Batch processing (reference): ~5.78ms per document
-- Potential improvement: 8-17x faster with batch processing
+- Batch processing (verified with production models): ~8ms per document
+- Actual improvement: 6-12x faster with batch processing
+- Production models deployed and ready:
+  - Single: `c7DtopcBzGk_n9nPCKO9`
+  - Batch: `5KHtopcBJ3g2K0lQM9Nx`
+  - Location: `/home/junqiu/tracing_gpu/batch_model/FINAL/`
 
 ## 4. Proposed Architecture
 
