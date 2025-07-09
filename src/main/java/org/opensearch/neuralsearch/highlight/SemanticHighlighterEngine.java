@@ -10,12 +10,15 @@ import org.opensearch.OpenSearchException;
 import org.opensearch.neuralsearch.ml.MLCommonsClientAccessor;
 import org.opensearch.neuralsearch.processor.highlight.SentenceHighlightingRequest;
 import org.opensearch.search.fetch.subphase.highlight.FieldHighlightContext;
+import org.opensearch.search.fetch.subphase.highlight.HighlightField;
 import org.opensearch.neuralsearch.highlight.extractor.QueryTextExtractorRegistry;
 import org.opensearch.action.support.PlainActionFuture;
+import org.opensearch.core.common.text.Text;
 import lombok.NonNull;
 import lombok.Builder;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -294,5 +297,87 @@ public class SemanticHighlighterEngine {
         } catch (ClassCastException e) {
             throw new OpenSearchException(String.format(Locale.ROOT, "Expect item to be map of string to number, but was: %s", item));
         }
+    }
+
+    /**
+     * Performs batch highlighting on multiple field contexts using a single ML request.
+     * This method groups the contexts and processes them in batch for improved performance.
+     *
+     * @param modelId The ML model ID to use for highlighting
+     * @param contexts List of field contexts to highlight
+     * @return Map of field context to highlighted field
+     */
+    public Map<FieldHighlightContext, HighlightField> batchHighlight(String modelId, List<FieldHighlightContext> contexts) {
+
+        Map<FieldHighlightContext, HighlightField> results = new HashMap<>();
+
+        if (contexts == null || contexts.isEmpty()) {
+            return results;
+        }
+
+        // Prepare batch request data
+        List<SentenceHighlightingRequest> batchRequests = new ArrayList<>();
+        List<FieldHighlightContext> validContexts = new ArrayList<>();
+
+        for (FieldHighlightContext context : contexts) {
+            try {
+                String fieldText = getFieldText(context);
+                String queryText = extractOriginalQuery(context.query, context.fieldName);
+
+                if (queryText != null && !queryText.isEmpty()) {
+                    SentenceHighlightingRequest request = SentenceHighlightingRequest.builder()
+                        .modelId(modelId)
+                        .question(queryText)
+                        .context(fieldText)
+                        .build();
+
+                    batchRequests.add(request);
+                    validContexts.add(context);
+                }
+            } catch (Exception e) {
+                log.warn("Skipping field {} in batch due to error: {}", context.fieldName, e.getMessage());
+            }
+        }
+
+        if (batchRequests.isEmpty()) {
+            return results;
+        }
+
+        // Call ML Commons batch API
+        PlainActionFuture<List<List<Map<String, Object>>>> future = PlainActionFuture.newFuture();
+
+        try {
+            // Use batch inference API
+            mlCommonsClient.inferenceSentenceHighlightingBatch(modelId, batchRequests, future);
+            List<List<Map<String, Object>>> batchResults = future.actionGet();
+
+            // Process batch results
+            for (int i = 0; i < Math.min(batchResults.size(), validContexts.size()); i++) {
+                FieldHighlightContext context = validContexts.get(i);
+                List<Map<String, Object>> highlightResult = batchResults.get(i);
+
+                if (highlightResult != null && !highlightResult.isEmpty()) {
+                    String fieldText = getFieldText(context);
+                    String[] preTags = context.field.fieldOptions().preTags();
+                    String[] postTags = context.field.fieldOptions().postTags();
+
+                    String highlightedText = applyHighlighting(fieldText, highlightResult.getFirst(), preTags[0], postTags[0]);
+
+                    if (highlightedText != null && !highlightedText.isEmpty()) {
+                        Text[] fragments = new Text[] { new Text(highlightedText) };
+                        HighlightField field = new HighlightField(context.fieldName, fragments);
+                        results.put(context, field);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error during batch highlighting inference - modelId: [{}], batch size: [{}]", modelId, batchRequests.size(), e);
+            throw new OpenSearchException(
+                String.format(Locale.ROOT, "Error during batch highlighting inference from model [%s]", modelId),
+                e
+            );
+        }
+
+        return results;
     }
 }

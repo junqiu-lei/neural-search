@@ -10,6 +10,7 @@ import static org.opensearch.neuralsearch.processor.TextImageEmbeddingProcessor.
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +28,7 @@ import org.opensearch.ml.common.MLModel;
 import org.opensearch.ml.common.dataset.MLInputDataset;
 import org.opensearch.ml.common.dataset.TextDocsInputDataSet;
 import org.opensearch.ml.common.dataset.TextSimilarityInputDataSet;
+import org.opensearch.ml.common.dataset.remote.RemoteInferenceInputDataSet;
 import org.opensearch.ml.common.input.MLInput;
 import org.opensearch.ml.common.output.MLOutput;
 import org.opensearch.ml.common.output.model.ModelResultFilter;
@@ -442,5 +444,197 @@ public class MLCommonsClientAccessor {
         @NonNull final ActionListener<List<Map<String, Object>>> listener
     ) {
         retryableInferenceSentenceHighlighting(inferenceRequest, 0, listener);
+    }
+
+    /**
+     * This method will highlight relevant sentences in batch for multiple question-context pairs.
+     * Processing multiple requests in batch is more efficient than individual inference calls.
+     *
+     * @param modelId the ID of the model to use for highlighting
+     * @param batchRequests list of highlighting requests
+     * @param listener the listener to be called with batch highlighting results
+     */
+    public void inferenceSentenceHighlightingBatch(
+        @NonNull final String modelId,
+        @NonNull final List<SentenceHighlightingRequest> batchRequests,
+        @NonNull final ActionListener<List<List<Map<String, Object>>>> listener
+    ) {
+        if (batchRequests.isEmpty()) {
+            listener.onResponse(Collections.emptyList());
+            return;
+        }
+
+        // For batch processing, we need to create multiple QuestionAnsweringInputDataSet
+        // First, try to use batch-aware approach with remote inference
+        if (batchRequests.size() == 1) {
+            // Single request - use standard QuestionAnsweringInputDataSet
+            SentenceHighlightingRequest request = batchRequests.get(0);
+            MLInputDataset inputDataset = new QuestionAnsweringInputDataSet(request.getQuestion(), request.getContext());
+            MLInput mlInput = new MLInput(FunctionName.QUESTION_ANSWERING, null, inputDataset);
+
+            // Execute single inference but return as batch format
+            mlClient.predict(modelId, mlInput, ActionListener.wrap(mlOutput -> {
+                List<Map<String, Object>> singleResult = processHighlightingOutput((ModelTensorOutput) mlOutput);
+                List<List<Map<String, Object>>> batchResults = new ArrayList<>();
+                batchResults.add(singleResult);
+                listener.onResponse(batchResults);
+            }, e -> {
+                log.error("Failed to run batch sentence highlighting for model " + modelId, e);
+                listener.onFailure(e);
+            }));
+            return;
+        }
+
+        // For multiple requests, we need to check if this is a remote model
+        // First try to get model information to determine the best approach
+        mlClient.getModel(modelId, null, ActionListener.wrap(model -> {
+            FunctionName functionName = model.getAlgorithm();
+
+            if (functionName == FunctionName.QUESTION_ANSWERING) {
+                // Local QA model - must use individual inference for BWC
+                log.debug("Model {} is local QUESTION_ANSWERING type, using individual inference", modelId);
+                fallbackToIndividualInference(modelId, batchRequests, listener);
+            } else if (functionName == FunctionName.REMOTE) {
+                // Remote model - can use batch inference
+                log.debug("Model {} is REMOTE type, attempting batch inference", modelId);
+                executeBatchInferenceForRemoteModel(modelId, batchRequests, listener);
+            } else {
+                // Unknown model type - try batch with fallback
+                log.warn("Model {} has unexpected function type: {}, trying batch with fallback", modelId, functionName);
+                executeBatchInferenceForRemoteModel(modelId, batchRequests, listener);
+            }
+        }, e -> {
+            // If we can't get model info, try batch with fallback
+            log.warn("Failed to get model info for {}, trying batch inference with fallback", modelId, e);
+            executeBatchInferenceForRemoteModel(modelId, batchRequests, listener);
+        }));
+    }
+
+    /**
+     * Parse the ML output for batch highlighting results
+     */
+    private List<List<Map<String, Object>>> parseBatchHighlightingOutput(MLOutput mlOutput) {
+        List<List<Map<String, Object>>> results = new ArrayList<>();
+
+        if (mlOutput instanceof ModelTensorOutput) {
+            ModelTensorOutput modelTensorOutput = (ModelTensorOutput) mlOutput;
+            List<ModelTensors> tensorsList = modelTensorOutput.getMlModelOutputs();
+
+            for (ModelTensors tensors : tensorsList) {
+                List<ModelTensor> mlModelTensors = tensors.getMlModelTensors();
+                if (!mlModelTensors.isEmpty()) {
+                    Map<String, ?> dataMap = mlModelTensors.get(0).getDataAsMap();
+                    Object highlightsObj = dataMap.get("highlights");
+                    if (highlightsObj instanceof List) {
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> highlights = (List<Map<String, Object>>) highlightsObj;
+                        results.add(highlights);
+                    } else {
+                        results.add(Collections.emptyList());
+                    }
+                }
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * Execute batch inference for remote models
+     */
+    private void executeBatchInferenceForRemoteModel(
+        String modelId,
+        List<SentenceHighlightingRequest> batchRequests,
+        ActionListener<List<List<Map<String, Object>>>> listener
+    ) {
+        try {
+            // For remote models, we use RemoteInferenceInputDataSet with proper parameters
+            Map<String, String> parameters = new HashMap<>();
+
+            // Build the inputs array for batch processing
+            StringBuilder inputsJson = new StringBuilder("[");
+            for (int i = 0; i < batchRequests.size(); i++) {
+                if (i > 0) inputsJson.append(",");
+                SentenceHighlightingRequest request = batchRequests.get(i);
+                // Escape quotes in question and context
+                String escapedQuestion = request.getQuestion().replace("\"", "\\\"");
+                String escapedContext = request.getContext().replace("\"", "\\\"");
+                inputsJson.append("{\"question\":\"")
+                    .append(escapedQuestion)
+                    .append("\",\"context\":\"")
+                    .append(escapedContext)
+                    .append("\"}");
+            }
+            inputsJson.append("]");
+
+            parameters.put("inputs", inputsJson.toString());
+
+            // Create RemoteInferenceInputDataSet
+            RemoteInferenceInputDataSet inputDataset = new RemoteInferenceInputDataSet(parameters);
+            MLInput mlInput = MLInput.builder().algorithm(FunctionName.REMOTE).inputDataset(inputDataset).build();
+
+            // Execute batch inference
+            mlClient.predict(modelId, mlInput, ActionListener.wrap(mlOutput -> {
+                List<List<Map<String, Object>>> results = parseBatchHighlightingOutput(mlOutput);
+                listener.onResponse(results);
+            }, e -> {
+                log.warn("Batch inference failed for remote model {}, falling back to individual inference", modelId, e);
+                fallbackToIndividualInference(modelId, batchRequests, listener);
+            }));
+        } catch (Exception e) {
+            log.error("Error preparing batch inference for model " + modelId, e);
+            fallbackToIndividualInference(modelId, batchRequests, listener);
+        }
+    }
+
+    /**
+     * Fallback to individual inference when batch processing fails
+     */
+    private void fallbackToIndividualInference(
+        String modelId,
+        List<SentenceHighlightingRequest> batchRequests,
+        ActionListener<List<List<Map<String, Object>>>> listener
+    ) {
+        List<List<Map<String, Object>>> results = new ArrayList<>();
+        AtomicInteger completedRequests = new AtomicInteger(0);
+        AtomicBoolean hasError = new AtomicBoolean(false);
+
+        for (int i = 0; i < batchRequests.size(); i++) {
+            results.add(new ArrayList<>());
+        }
+
+        for (int i = 0; i < batchRequests.size(); i++) {
+            final int index = i;
+            SentenceHighlightingRequest request = batchRequests.get(i);
+
+            // Create individual inference request
+            SentenceHighlightingRequest individualRequest = SentenceHighlightingRequest.builder()
+                .modelId(modelId)
+                .question(request.getQuestion())
+                .context(request.getContext())
+                .build();
+
+            // Execute individual inference
+            inferenceSentenceHighlighting(individualRequest, ActionListener.wrap(individualResult -> {
+                synchronized (results) {
+                    results.set(index, individualResult);
+                    if (completedRequests.incrementAndGet() == batchRequests.size()) {
+                        if (!hasError.get()) {
+                            listener.onResponse(results);
+                        }
+                    }
+                }
+            }, individualError -> {
+                synchronized (results) {
+                    log.warn("Individual inference failed for request " + index + ", using empty result", individualError);
+                    results.set(index, Collections.emptyList());
+                    if (completedRequests.incrementAndGet() == batchRequests.size()) {
+                        if (!hasError.get()) {
+                            listener.onResponse(results);
+                        }
+                    }
+                }
+            }));
+        }
     }
 }

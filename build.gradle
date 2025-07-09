@@ -250,6 +250,10 @@ validateNebulaPom.enabled = false
 
 def knnJarDirectory = "$buildDir/dependencies/opensearch-knn"
 
+repositories {
+    mavenLocal() // Add local Maven repository first
+}
+
 dependencies {
     api "org.opensearch:opensearch:${opensearch_version}"
     implementation group: 'org.opensearch.plugin', name:'mapper-extras-client', version: "${opensearch_version}"
