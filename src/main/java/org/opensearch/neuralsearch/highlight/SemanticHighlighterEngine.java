@@ -101,6 +101,12 @@ public class SemanticHighlighterEngine {
      * @return The model ID
      */
     public String getModelId(Map<String, Object> options) {
+        if (options == null) {
+            throw new IllegalArgumentException(
+                String.format(Locale.ROOT, "%s options are required but was null", MODEL_ID_FIELD)
+            );
+        }
+        
         Object modelId = options.get(MODEL_ID_FIELD);
         if (Objects.isNull(modelId) || (modelId instanceof String) == false) {
             throw new IllegalArgumentException(
