@@ -124,7 +124,7 @@ public class SemanticHighlighterEngine {
             return null;
         }
 
-        return applyHighlighting(context, results.getFirst(), preTag, postTag);
+        return applyHighlighting(context, results.get(0), preTag, postTag);
     }
 
     /**
@@ -175,12 +175,14 @@ public class SemanticHighlighterEngine {
      */
     public String applyHighlighting(String context, Map<String, Object> highlightResult, String preTag, String postTag) {
         // Get the "highlights" list from the result
+        log.info("applyHighlighting - Input: context length={}, highlightResult={}", context.length(), highlightResult);
         Object highlightsObj = highlightResult.get(MODEL_INFERENCE_RESULT_KEY);
 
         if (!(highlightsObj instanceof List<?> highlightsList)) {
             log.error(String.format(Locale.ROOT, "No valid highlights found in model inference result, highlightsObj: %s", highlightsObj));
             return null;
         }
+        log.info("applyHighlighting - Found {} highlights", highlightsList.size());
 
         if (highlightsList.isEmpty()) {
             // No highlights found, return context as is
@@ -361,7 +363,15 @@ public class SemanticHighlighterEngine {
                     String[] preTags = context.field.fieldOptions().preTags();
                     String[] postTags = context.field.fieldOptions().postTags();
 
-                    String highlightedText = applyHighlighting(fieldText, highlightResult.getFirst(), preTags[0], postTags[0]);
+                    // Extract the first map from the list
+                    Map<String, Object> firstResult = highlightResult.get(0);
+                    log.info("Batch highlighting - Processing result for field {}: {}", context.fieldName, firstResult);
+                    String highlightedText = applyHighlighting(fieldText, firstResult, preTags[0], postTags[0]);
+                    log.info(
+                        "Batch highlighting - Result for field {}: {}",
+                        context.fieldName,
+                        highlightedText != null ? "Has highlights" : "No highlights"
+                    );
 
                     if (highlightedText != null && !highlightedText.isEmpty()) {
                         Text[] fragments = new Text[] { new Text(highlightedText) };

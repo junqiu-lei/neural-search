@@ -552,13 +552,16 @@ public class MLCommonsClientAccessor {
             Map<String, String> parameters = new HashMap<>();
 
             // Build the inputs array for batch processing
+            // Using proper JSON escaping
             StringBuilder inputsJson = new StringBuilder("[");
             for (int i = 0; i < batchRequests.size(); i++) {
                 if (i > 0) inputsJson.append(",");
                 SentenceHighlightingRequest request = batchRequests.get(i);
-                // Escape quotes in question and context
-                String escapedQuestion = request.getQuestion().replace("\"", "\\\"");
-                String escapedContext = request.getContext().replace("\"", "\\\"");
+
+                // Properly escape JSON special characters
+                String escapedQuestion = escapeJsonString(request.getQuestion());
+                String escapedContext = escapeJsonString(request.getContext());
+
                 inputsJson.append("{\"question\":\"")
                     .append(escapedQuestion)
                     .append("\",\"context\":\"")
@@ -567,6 +570,7 @@ public class MLCommonsClientAccessor {
             }
             inputsJson.append("]");
 
+            // Pass the JSON string as a parameter
             parameters.put("inputs", inputsJson.toString());
 
             // Create RemoteInferenceInputDataSet
@@ -636,5 +640,53 @@ public class MLCommonsClientAccessor {
                 }
             }));
         }
+    }
+
+    /**
+     * Escapes special characters in a string for JSON serialization
+     *
+     * @param input The string to escape
+     * @return The escaped string
+     */
+    private String escapeJsonString(String input) {
+        if (input == null) {
+            return "";
+        }
+
+        StringBuilder result = new StringBuilder();
+        for (char c : input.toCharArray()) {
+            switch (c) {
+                case '"':
+                    result.append("\\\"");
+                    break;
+                case '\\':
+                    result.append("\\\\");
+                    break;
+                case '\b':
+                    result.append("\\b");
+                    break;
+                case '\f':
+                    result.append("\\f");
+                    break;
+                case '\n':
+                    result.append("\\n");
+                    break;
+                case '\r':
+                    result.append("\\r");
+                    break;
+                case '\t':
+                    result.append("\\t");
+                    break;
+                default:
+                    if (c < 0x20 || c > 0x7E) {
+                        // Escape non-printable characters
+                        result.append(String.format(java.util.Locale.ROOT, "\\u%04x", (int) c));
+                    } else {
+                        result.append(c);
+                    }
+                    break;
+            }
+        }
+        return result.toString();
     }
 }

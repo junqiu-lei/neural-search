@@ -29,6 +29,10 @@ public class SemanticHighlighter implements BatchHighlighter {
 
     private SemanticHighlighterEngine semanticHighlighterEngine;
 
+    static {
+        log.warn("!!!!!!!!!! SEMANTIC HIGHLIGHTER CLASS LOADED - BatchHighlighter interface implemented !!!!!!!!!");
+    }
+
     public void initialize(SemanticHighlighterEngine semanticHighlighterEngine) {
         if (this.semanticHighlighterEngine != null) {
             throw new IllegalStateException(
@@ -51,6 +55,7 @@ public class SemanticHighlighter implements BatchHighlighter {
      */
     @Override
     public HighlightField highlight(FieldHighlightContext fieldContext) {
+        log.warn("!!!!!!!!!! SEMANTIC HIGHLIGHTER 'highlight' method CALLED !!!!!!!!!! for field {}", fieldContext.fieldName);
         if (semanticHighlighterEngine == null) {
             throw new IllegalStateException("SemanticHighlighter has not been initialized");
         }
@@ -99,6 +104,7 @@ public class SemanticHighlighter implements BatchHighlighter {
      */
     @Override
     public boolean supportsBatchHighlighting() {
+        log.warn("!!!!!!!!!! SEMANTIC HIGHLIGHTER 'supportsBatchHighlighting' method CALLED - returning TRUE !!!!!!!!!");
         return true;
     }
 
@@ -112,6 +118,7 @@ public class SemanticHighlighter implements BatchHighlighter {
      */
     @Override
     public Map<FieldHighlightContext, HighlightField> batchHighlight(List<FieldHighlightContext> contexts) throws IOException {
+        log.warn("!!!!!!!!!! SEMANTIC HIGHLIGHTER 'batchHighlight' method CALLED !!!!!!!!!!");
 
         if (semanticHighlighterEngine == null) {
             throw new IllegalStateException("SemanticHighlighter has not been initialized");
