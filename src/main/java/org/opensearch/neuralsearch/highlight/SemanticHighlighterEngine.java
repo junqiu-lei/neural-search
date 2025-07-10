@@ -51,6 +51,12 @@ public class SemanticHighlighterEngine {
         if (fieldContext.hitContext == null || fieldContext.hitContext.sourceLookup() == null) {
             throw new IllegalArgumentException(String.format(Locale.ROOT, "Field %s is not found in the hit", fieldContext.fieldName));
         }
+        log.info(
+            "getFieldText - docId: {}, field: {}, source: {}",
+            fieldContext.hitContext.docId(),
+            fieldContext.fieldName,
+            fieldContext.hitContext.sourceLookup().source()
+        );
         Object fieldTextObject = fieldContext.hitContext.sourceLookup().extractValue(fieldContext.fieldName, null);
         if (fieldTextObject == null) {
             throw new IllegalArgumentException(String.format(Locale.ROOT, "Field %s is not found in the document", fieldContext.fieldName));
@@ -69,6 +75,7 @@ public class SemanticHighlighterEngine {
         if (fieldTextString.isEmpty()) {
             throw new IllegalArgumentException(String.format(Locale.ROOT, "Field %s is empty", fieldContext.fieldName));
         }
+        log.info("getFieldText - returning text: {}", fieldTextString.substring(0, Math.min(50, fieldTextString.length())) + "...");
         return fieldTextString;
     }
 
@@ -323,6 +330,9 @@ public class SemanticHighlighterEngine {
 
         for (FieldHighlightContext context : contexts) {
             try {
+                // Ensure sourceLookup is set to the correct document before extracting text
+                context.hitContext.sourceLookup().setSegmentAndDocument(context.hitContext.readerContext(), context.hitContext.docId());
+
                 String fieldText = getFieldText(context);
                 String queryText = extractOriginalQuery(context.query, context.fieldName);
 
@@ -335,8 +345,13 @@ public class SemanticHighlighterEngine {
 
                     batchRequests.add(request);
                     validContexts.add(context);
-                    log.info("Batch highlighting - Added request for doc {}: question='{}', context='{}'", 
-                        context.hitContext.docId(), queryText, fieldText.substring(0, Math.min(50, fieldText.length())) + "...");
+                    log.info(
+                        "Batch highlighting - Added request for doc {}: question='{}', context='{}'",
+                        context.hitContext.docId(),
+                        queryText,
+                        fieldText.substring(0, Math.min(50, fieldText.length())) + "..."
+                    );
+                }
             } catch (Exception e) {
                 log.warn("Skipping field {} in batch due to error: {}", context.fieldName, e.getMessage());
             }
@@ -359,10 +374,18 @@ public class SemanticHighlighterEngine {
             for (int i = 0; i < Math.min(batchResults.size(), validContexts.size()); i++) {
                 FieldHighlightContext context = validContexts.get(i);
                 List<Map<String, Object>> highlightResult = batchResults.get(i);
-                log.info("Batch highlighting - Mapping result {} to doc {}, field {}: {}", 
-                    i, context.hitContext.docId(), context.fieldName, highlightResult);
+                log.info(
+                    "Batch highlighting - Mapping result {} to doc {}, field {}: {}",
+                    i,
+                    context.hitContext.docId(),
+                    context.fieldName,
+                    highlightResult
+                );
 
                 if (highlightResult != null && !highlightResult.isEmpty()) {
+                    // Ensure sourceLookup is set to the correct document before extracting text
+                    context.hitContext.sourceLookup().setSegmentAndDocument(context.hitContext.readerContext(), context.hitContext.docId());
+
                     String fieldText = getFieldText(context);
                     String[] preTags = context.field.fieldOptions().preTags();
                     String[] postTags = context.field.fieldOptions().postTags();
