@@ -335,7 +335,8 @@ public class SemanticHighlighterEngine {
 
                     batchRequests.add(request);
                     validContexts.add(context);
-                }
+                    log.info("Batch highlighting - Added request for doc {}: question='{}', context='{}'", 
+                        context.hitContext.docId(), queryText, fieldText.substring(0, Math.min(50, fieldText.length())) + "...");
             } catch (Exception e) {
                 log.warn("Skipping field {} in batch due to error: {}", context.fieldName, e.getMessage());
             }
@@ -354,19 +355,24 @@ public class SemanticHighlighterEngine {
             List<List<Map<String, Object>>> batchResults = future.actionGet();
 
             // Process batch results
+            log.info("Batch highlighting - Processing {} results for {} contexts", batchResults.size(), validContexts.size());
             for (int i = 0; i < Math.min(batchResults.size(), validContexts.size()); i++) {
                 FieldHighlightContext context = validContexts.get(i);
                 List<Map<String, Object>> highlightResult = batchResults.get(i);
+                log.info("Batch highlighting - Mapping result {} to doc {}, field {}: {}", 
+                    i, context.hitContext.docId(), context.fieldName, highlightResult);
 
                 if (highlightResult != null && !highlightResult.isEmpty()) {
                     String fieldText = getFieldText(context);
                     String[] preTags = context.field.fieldOptions().preTags();
                     String[] postTags = context.field.fieldOptions().postTags();
 
-                    // Extract the first map from the list
-                    Map<String, Object> firstResult = highlightResult.get(0);
-                    log.info("Batch highlighting - Processing result for field {}: {}", context.fieldName, firstResult);
-                    String highlightedText = applyHighlighting(fieldText, firstResult, preTags[0], postTags[0]);
+                    // The batch result is already a list of highlights
+                    // We need to wrap it in a map with "highlights" key for applyHighlighting
+                    Map<String, Object> wrappedResult = new HashMap<>();
+                    wrappedResult.put(MODEL_INFERENCE_RESULT_KEY, highlightResult);
+                    log.info("Batch highlighting - Processing result for field {}: {}", context.fieldName, highlightResult);
+                    String highlightedText = applyHighlighting(fieldText, wrappedResult, preTags[0], postTags[0]);
                     log.info(
                         "Batch highlighting - Result for field {}: {}",
                         context.fieldName,

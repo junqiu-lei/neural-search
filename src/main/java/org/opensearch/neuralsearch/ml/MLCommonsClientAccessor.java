@@ -527,8 +527,24 @@ public class MLCommonsClientAccessor {
                     Object highlightsObj = dataMap.get("highlights");
                     if (highlightsObj instanceof List) {
                         @SuppressWarnings("unchecked")
-                        List<Map<String, Object>> highlights = (List<Map<String, Object>>) highlightsObj;
-                        results.add(highlights);
+                        List<?> highlightsList = (List<?>) highlightsObj;
+
+                        // Check if this is a batch response (list of lists)
+                        if (!highlightsList.isEmpty() && highlightsList.get(0) instanceof List) {
+                            // This is a batch response - each element is a list of highlights for one document
+                            for (Object docHighlights : highlightsList) {
+                                if (docHighlights instanceof List) {
+                                    @SuppressWarnings("unchecked")
+                                    List<Map<String, Object>> highlights = (List<Map<String, Object>>) docHighlights;
+                                    results.add(highlights);
+                                }
+                            }
+                        } else {
+                            // This is a single response - add it as is
+                            @SuppressWarnings("unchecked")
+                            List<Map<String, Object>> highlights = (List<Map<String, Object>>) highlightsObj;
+                            results.add(highlights);
+                        }
                     } else {
                         results.add(Collections.emptyList());
                     }
