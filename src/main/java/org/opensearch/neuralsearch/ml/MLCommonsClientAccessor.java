@@ -27,6 +27,7 @@ import org.opensearch.ml.client.MachineLearningNodeClient;
 import org.opensearch.ml.common.FunctionName;
 import org.opensearch.ml.common.MLModel;
 import org.opensearch.ml.common.dataset.MLInputDataset;
+import org.opensearch.ml.common.dataset.QuestionAnsweringInputDataSet;
 import org.opensearch.ml.common.dataset.TextDocsInputDataSet;
 import org.opensearch.ml.common.dataset.TextSimilarityInputDataSet;
 import org.opensearch.ml.common.dataset.remote.RemoteInferenceInputDataSet;
@@ -42,8 +43,11 @@ import org.opensearch.neuralsearch.processor.MapInferenceRequest;
 import org.opensearch.neuralsearch.processor.SimilarityInferenceRequest;
 import org.opensearch.neuralsearch.processor.TextInferenceRequest;
 import org.opensearch.neuralsearch.util.RetryUtil;
-import org.opensearch.ml.common.dataset.QuestionAnsweringInputDataSet;
 import org.opensearch.neuralsearch.processor.highlight.SentenceHighlightingRequest;
+import org.opensearch.neuralsearch.highlight.SemanticHighlightingConstants;
+import java.util.HashMap;
+import org.opensearch.common.xcontent.XContentFactory;
+import org.opensearch.core.xcontent.XContentBuilder;
 
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -251,12 +255,14 @@ public class MLCommonsClientAccessor {
         // Iterate through all ModelTensors to find the DSL result
         for (ModelTensors tensors : tensorOutputList) {
             List<ModelTensor> tensorList = tensors.getMlModelTensors();
-            if (!CollectionUtils.isEmpty(tensorList)) {
-                for (ModelTensor tensor : tensorList) {
-                    String result = tensor.getResult();
-                    if (result != null && !result.trim().isEmpty()) {
-                        return result;
-                    }
+            if (CollectionUtils.isEmpty(tensorList)) {
+                continue;
+            }
+
+            for (ModelTensor tensor : tensorList) {
+                String result = tensor.getResult();
+                if (result != null && !result.trim().isEmpty()) {
+                    return result;
                 }
             }
         }
@@ -410,32 +416,51 @@ public class MLCommonsClientAccessor {
      * Retryable method to perform sentence highlighting inference.
      * This method will retry up to 3 times if a retryable exception occurs.
      */
-    private void retryableInferenceSentenceHighlighting(
-        final SentenceHighlightingRequest inferenceRequest,
-        final int retryTime,
-        final ActionListener<List<Map<String, Object>>> listener
+    public void batchInferenceSentenceHighlighting(
+        @NonNull final String modelId,
+        @NonNull final List<SentenceHighlightingRequest> batchRequests,
+        @NonNull final ActionListener<List<List<Map<String, Object>>>> listener
     ) {
-        try {
-            MLInputDataset inputDataset = new QuestionAnsweringInputDataSet(inferenceRequest.getQuestion(), inferenceRequest.getContext());
-            MLInput mlInput = new MLInput(FunctionName.QUESTION_ANSWERING, null, inputDataset);
+        // Create a simple InferenceRequest wrapper since batch method accepts modelId separately
+        // This is different from single inference where the request object contains the modelId
+        InferenceRequest inferenceRequest = new InferenceRequest() {
+            @Override
+            public String getModelId() {
+                return modelId;
+            }
+        };
 
-            mlClient.predict(inferenceRequest.getModelId(), mlInput, ActionListener.wrap(mlOutput -> {
-                try {
-                    List<Map<String, Object>> result = processHighlightingOutput((ModelTensorOutput) mlOutput);
-                    listener.onResponse(result);
-                } catch (Exception e) {
-                    listener.onFailure(e);
-                }
-            },
-                e -> RetryUtil.handleRetryOrFailure(
-                    e,
-                    retryTime,
-                    () -> retryableInferenceSentenceHighlighting(inferenceRequest, retryTime + 1, listener),
-                    listener
-                )
-            ));
+        retryableInference(
+            inferenceRequest,
+            0,
+            () -> createBatchHighlightingMLInput(batchRequests),
+            this::parseBatchHighlightingOutput,
+            listener
+        );
+    }
+
+    /**
+     * Create MLInput for batch highlighting inference
+     */
+    private MLInput createBatchHighlightingMLInput(List<SentenceHighlightingRequest> batchRequests) {
+        try {
+            Map<String, String> parameters = new HashMap<>();
+
+            XContentBuilder builder = XContentFactory.jsonBuilder();
+            builder.startArray();
+            for (SentenceHighlightingRequest request : batchRequests) {
+                builder.startObject()
+                    .field(SemanticHighlightingConstants.QUESTION_KEY, request.getQuestion())
+                    .field(SemanticHighlightingConstants.CONTEXT_KEY, request.getContext())
+                    .endObject();
+            }
+            builder.endArray();
+
+            parameters.put(SemanticHighlightingConstants.INPUTS_KEY, builder.toString());
+            RemoteInferenceInputDataSet inputDataset = new RemoteInferenceInputDataSet(parameters);
+            return MLInput.builder().algorithm(FunctionName.REMOTE).inputDataset(inputDataset).build();
         } catch (Exception e) {
-            listener.onFailure(e);
+            throw new IllegalStateException("Failed to create batch highlighting ML input", e);
         }
     }
 
@@ -450,10 +475,74 @@ public class MLCommonsClientAccessor {
         @NonNull final SentenceHighlightingRequest inferenceRequest,
         @NonNull final ActionListener<List<Map<String, Object>>> listener
     ) {
-        retryableInference(inferenceRequest, 0, () -> {
+        retryableInference(
+            inferenceRequest,
+            0,
+            () -> createSingleHighlightingMLInput(inferenceRequest),
+            mlOutput -> parseSingleHighlightingOutput(mlOutput),
+            listener
+        );
+    }
+
+    /**
+     * Create MLInput for single highlighting inference
+     */
+    private MLInput createSingleHighlightingMLInput(SentenceHighlightingRequest inferenceRequest) {
+        try {
             MLInputDataset inputDataset = new QuestionAnsweringInputDataSet(inferenceRequest.getQuestion(), inferenceRequest.getContext());
             return new MLInput(FunctionName.QUESTION_ANSWERING, null, inputDataset);
-        }, (mlOutput) -> processHighlightingOutput((ModelTensorOutput) mlOutput), listener);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to create single highlighting ML input", e);
+        }
+    }
+
+    /**
+     * Parse the ML output for single highlighting result
+     */
+    private List<Map<String, Object>> parseSingleHighlightingOutput(MLOutput mlOutput) {
+        // For single inference, the model returns a single document's highlights
+        // We need to check if the response is in single or batch format
+        if (!(mlOutput instanceof ModelTensorOutput modelTensorOutput)) {
+            throw new IllegalStateException("Expected ModelTensorOutput but got: " + mlOutput.getClass().getSimpleName());
+        }
+
+        List<ModelTensors> tensorsList = modelTensorOutput.getMlModelOutputs();
+        if (tensorsList.isEmpty() || tensorsList.get(0).getMlModelTensors().isEmpty()) {
+            // Return empty highlights if no results
+            return List.of(Map.of(SemanticHighlightingConstants.HIGHLIGHTS_KEY, Collections.emptyList()));
+        }
+
+        Map<String, ?> dataMap = tensorsList.get(0).getMlModelTensors().get(0).getDataAsMap();
+        Object highlightsObj = dataMap.get(SemanticHighlightingConstants.HIGHLIGHTS_KEY);
+
+        // Check if the highlights are in the expected format
+        if (highlightsObj == null) {
+            return List.of(Map.of(SemanticHighlightingConstants.HIGHLIGHTS_KEY, Collections.emptyList()));
+        }
+
+        // For single inference, the highlights might be:
+        // 1. A list of highlight objects directly (single document format)
+        // 2. A list of lists (batch format with one document)
+        if (highlightsObj instanceof List<?> highlightsList && !highlightsList.isEmpty()) {
+            Object firstItem = highlightsList.get(0);
+
+            if (firstItem instanceof Map) {
+                // Single document format - highlights is a list of highlight objects
+                // Return the dataMap directly as it already has the correct format
+                @SuppressWarnings("unchecked")
+                Map<String, Object> resultMap = (Map<String, Object>) dataMap;
+                return List.of(resultMap);
+            } else if (firstItem instanceof List) {
+                // Batch format - parse using batch method and extract first result
+                List<List<Map<String, Object>>> batchResults = parseBatchHighlightingOutput(mlOutput);
+                if (batchResults != null && !batchResults.isEmpty() && batchResults.get(0) != null) {
+                    return List.of(Map.of(SemanticHighlightingConstants.HIGHLIGHTS_KEY, batchResults.get(0)));
+                }
+            }
+        }
+
+        // Default: return empty highlights
+        return List.of(Map.of(SemanticHighlightingConstants.HIGHLIGHTS_KEY, Collections.emptyList()));
     }
 
     /**
@@ -497,5 +586,68 @@ public class MLCommonsClientAccessor {
                 listener
             )
         ));
+    }
+
+    /**
+     * Parse the ML output for batch highlighting results
+     */
+    private List<List<Map<String, Object>>> parseBatchHighlightingOutput(MLOutput mlOutput) {
+        List<List<Map<String, Object>>> results = new ArrayList<>();
+
+        if (!(mlOutput instanceof ModelTensorOutput modelTensorOutput)) {
+            throw new IllegalStateException("Expected ModelTensorOutput but got: " + mlOutput.getClass().getSimpleName());
+        }
+
+        List<ModelTensors> tensorsList = modelTensorOutput.getMlModelOutputs();
+
+        for (ModelTensors tensors : tensorsList) {
+            List<ModelTensor> mlModelTensors = tensors.getMlModelTensors();
+            if (mlModelTensors.isEmpty()) {
+                continue;
+            }
+
+            Map<String, ?> dataMap = mlModelTensors.get(0).getDataAsMap();
+            Object highlightsObj = dataMap.get(SemanticHighlightingConstants.HIGHLIGHTS_KEY);
+
+            if (highlightsObj == null) {
+                results.add(new ArrayList<>());  // Add empty list for this document
+                continue;
+            }
+
+            if (!(highlightsObj instanceof List<?> highlightsList)) {
+                throw new IllegalStateException("Expected highlights to be a List, but got: " + highlightsObj.getClass().getSimpleName());
+            }
+
+            if (highlightsList.isEmpty()) {
+                results.add(new ArrayList<>());  // Add empty list for this document
+                continue;
+            }
+
+            if (!(highlightsList.get(0) instanceof List)) {
+                throw new IllegalStateException(
+                    "Expected highlights to be a list of lists, but got: " + highlightsList.get(0).getClass().getSimpleName()
+                );
+            }
+
+            for (Object docHighlights : highlightsList) {
+                if (!(docHighlights instanceof List<?> highlightList)) {
+                    throw new IllegalStateException(
+                        "Expected each document's highlights to be a List, but got: " + docHighlights.getClass().getSimpleName()
+                    );
+                }
+                List<Map<String, Object>> highlights = new ArrayList<>();
+                for (Object item : highlightList) {
+                    if (!(item instanceof Map)) {
+                        throw new IllegalStateException("Expected highlight item to be a Map, but got: " + item.getClass().getSimpleName());
+                    }
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> highlight = (Map<String, Object>) item;
+                    highlights.add(highlight);
+                }
+                results.add(highlights);
+            }
+        }
+
+        return results;
     }
 }
