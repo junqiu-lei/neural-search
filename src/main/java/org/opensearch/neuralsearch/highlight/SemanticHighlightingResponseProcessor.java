@@ -38,6 +38,11 @@ import static org.opensearch.neuralsearch.highlight.SemanticHighlightingConstant
  */
 @Log4j2
 public class SemanticHighlightingResponseProcessor implements SearchResponseProcessor {
+    private static final int DEFAULT_MAX_BATCH_SIZE = 100;
+    private static final String DEFAULT_PRE_TAG = "<em>";
+    private static final String DEFAULT_POST_TAG = "</em>";
+    private static final String MODEL_ID_OPTION = "model_id";
+
     private final MLCommonsClientAccessor mlClientAccessor;
 
     private final String tag;
@@ -148,12 +153,31 @@ public class SemanticHighlightingResponseProcessor implements SearchResponseProc
             return modelId; // Use default from constructor
         }
 
-        // Check if highlighter has options with model_id
         HighlightBuilder highlighter = request.source().highlighter();
-        // Look for model_id in highlighter options
-        // Note: This needs to parse the highlighter's internal structure
-        // For now, use the default model ID
-        return modelId;
+
+        // Check global highlighter options first
+        Map<String, Object> options = highlighter.options();
+        if (options != null && options.containsKey(MODEL_ID_OPTION)) {
+            Object modelIdValue = options.get(MODEL_ID_OPTION);
+            if (modelIdValue instanceof String) {
+                return (String) modelIdValue;
+            }
+        }
+
+        // Check field-specific options for semantic highlighting field
+        for (HighlightBuilder.Field field : highlighter.fields()) {
+            if (SemanticHighlightingConstants.HIGHLIGHTER_TYPE.equals(field.highlighterType())) {
+                Map<String, Object> fieldOptions = field.options();
+                if (fieldOptions != null && fieldOptions.containsKey(MODEL_ID_OPTION)) {
+                    Object modelIdValue = fieldOptions.get(MODEL_ID_OPTION);
+                    if (modelIdValue instanceof String) {
+                        return (String) modelIdValue;
+                    }
+                }
+            }
+        }
+
+        return modelId; // Use default from constructor
     }
 
     /**
@@ -282,12 +306,16 @@ public class SemanticHighlightingResponseProcessor implements SearchResponseProc
         }
 
         int endIndex = Math.min(startIndex + batchSize, allRequests.size());
-        List<SentenceHighlightingRequest> batchRequests = allRequests.subList(startIndex, endIndex);
-        List<SearchHit> batchHits = allValidHits.subList(startIndex, endIndex);
+
+        // Use indices instead of creating sublists for better memory efficiency
+        List<SentenceHighlightingRequest> batchRequests = new ArrayList<>(endIndex - startIndex);
+        for (int i = startIndex; i < endIndex; i++) {
+            batchRequests.add(allRequests.get(i));
+        }
 
         mlClientAccessor.batchInferenceSentenceHighlighting(modelId, batchRequests, ActionListener.wrap(batchResults -> {
             try {
-                applyBatchHighlightResults(response, batchResults, batchHits, semanticHighlightField);
+                applyBatchHighlightResultsWithIndices(response, batchResults, allValidHits, startIndex, endIndex, semanticHighlightField);
                 processNextBatch(
                     allRequests,
                     allValidHits,
@@ -411,7 +439,39 @@ public class SemanticHighlightingResponseProcessor implements SearchResponseProc
             }
             return response;
         } catch (Exception e) {
-            return response;
+            log.error("Error applying batch highlight results: {}", e.getMessage(), e);
+            if (ignoreFailure) {
+                return response;
+            } else {
+                throw new RuntimeException("Failed to apply batch highlight results", e);
+            }
+        }
+    }
+
+    /**
+     * Apply batch highlight results using indices to avoid creating sublists
+     */
+    private void applyBatchHighlightResultsWithIndices(
+        SearchResponse response,
+        List<List<Map<String, Object>>> batchResults,
+        List<SearchHit> allValidHits,
+        int startIndex,
+        int endIndex,
+        String semanticHighlightField
+    ) {
+        try {
+            int batchIndex = 0;
+            for (int i = startIndex; i < endIndex && batchIndex < batchResults.size(); i++, batchIndex++) {
+                List<Map<String, Object>> highlights = batchResults.get(batchIndex);
+                if (!highlights.isEmpty()) {
+                    applyHighlightsToHit(allValidHits.get(i), highlights, semanticHighlightField);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error applying batch highlight results with indices: {}", e.getMessage(), e);
+            if (!ignoreFailure) {
+                throw new RuntimeException("Failed to apply batch highlight results with indices", e);
+            }
         }
     }
 
