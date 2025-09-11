@@ -144,53 +144,53 @@ runs:
           --export-path model_store \
           --force
 
-        # Copy MAR file to container
-        echo "Copying MAR to container..."
+        # Create a config file that auto-loads the model
+        echo "Creating TorchServe config file..."
+        cat > config.properties << 'EOF'
+inference_address=http://0.0.0.0:8080
+management_address=http://0.0.0.0:8081
+metrics_address=http://0.0.0.0:8082
+model_store=/home/model-server/model-store
+load_models=semantic_highlighter.mar
+default_workers_per_model=1
+EOF
+        
+        # Copy MAR file and config to container
+        echo "Copying MAR and config to container..."
         docker cp model_store/semantic_highlighter.mar $CONTAINER_ID:/home/model-server/model-store/
-
-        # Restart TorchServe with the model
+        docker cp config.properties $CONTAINER_ID:/home/model-server/config.properties
+        
+        # Stop TorchServe in the container and restart with new config
         echo "Restarting TorchServe with model..."
-        docker restart $CONTAINER_ID
-
+        docker exec $CONTAINER_ID bash -c "torchserve --stop || true"
+        sleep 3
+        
+        # Start TorchServe with the model auto-loaded
+        docker exec -d $CONTAINER_ID bash -c "torchserve --start --model-store /home/model-server/model-store --ts-config /home/model-server/config.properties --models semantic_highlighter=semantic_highlighter.mar"
+        
         # Wait for TorchServe to be ready
-        echo "Waiting for TorchServe to restart..."
+        echo "Waiting for TorchServe to start with model..."
         for i in {1..30}; do
-          if curl -s http://localhost:8080/ping | grep -q "Healthy"; then
+          if curl -s http://localhost:8080/ping 2>/dev/null | grep -q "Healthy"; then
             echo "TorchServe is ready!"
             break
           fi
-          echo -n "."
-          sleep 2
-        done
-        echo ""
-
-        # Register the model with TorchServe
-        echo "Registering model with TorchServe..."
-        REGISTER_RESPONSE=$(curl -s -X POST "http://localhost:8081/models" \
-          -F "model_name=semantic_highlighter" \
-          -F "url=semantic_highlighter.mar" \
-          -F "initial_workers=1" \
-          -F "synchronous=true" \
-          -F "max_batch_delay=50")
-        
-        echo "Register response: $REGISTER_RESPONSE"
-        
-        # Wait for model to be ready
-        echo "Waiting for model to be ready..."
-        for i in {1..30}; do
-          MODEL_STATUS=$(curl -s http://localhost:8081/models/semantic_highlighter | jq -r '.[] | select(.modelName=="semantic_highlighter") | .workers[0].status' 2>/dev/null || echo "")
-          if [ "$MODEL_STATUS" = "READY" ]; then
-            echo "Model is ready!"
-            break
-          fi
-          echo "Model status: $MODEL_STATUS (attempt $i/30)"
+          echo "Waiting... ($i/30)"
           sleep 3
         done
-
+        
         # Verify model is loaded
         echo "Verifying model is loaded..."
-        MODEL_CHECK=$(curl -s http://localhost:8081/models)
-        echo "Models loaded: $MODEL_CHECK"
+        for i in {1..20}; do
+          MODEL_CHECK=$(curl -s http://localhost:8081/models 2>/dev/null || echo "{}")
+          if echo "$MODEL_CHECK" | grep -q "semantic_highlighter"; then
+            echo "Model loaded successfully!"
+            echo "Models available: $MODEL_CHECK"
+            break
+          fi
+          echo "Waiting for model to load... ($i/20)"
+          sleep 3
+        done
 
         # Test inference
         echo "Testing inference..."
