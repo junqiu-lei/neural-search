@@ -179,6 +179,11 @@ runs:
           sleep 3
         done
         
+        # Re-install dependencies after restart (workers need them)
+        echo "Re-installing dependencies for workers..."
+        docker exec $CONTAINER_ID pip install --no-cache-dir transformers==4.35.0 datasets nltk
+        docker exec $CONTAINER_ID python -c "import nltk; nltk.download('punkt')"
+        
         # Verify model is loaded
         echo "Verifying model is loaded..."
         for i in {1..20}; do
