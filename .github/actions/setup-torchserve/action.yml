@@ -88,45 +88,30 @@ runs:
         echo "Current directory: $(pwd)"
         echo "Looking for handler file..."
         
-        # Create a simplified handler for testing
-        echo "Creating simplified handler for CI testing..."
-        cat > handler.py << HANDLER_EOF
-        """
-        Simplified TorchServe Handler for Semantic Highlighter Model - CI Test Version
-        """
+        # Copy the simplified handler from the repository
+        echo "Looking for handler file..."
+        HANDLER_PATH="src/test/resources/remote-models/torchserve/handlers/torchserve_handler_simple.py"
+        
+        if [ -f "$HANDLER_PATH" ]; then
+          echo "Found handler at: $HANDLER_PATH"
+          cp "$HANDLER_PATH" handler.py
+        else
+          echo "Handler not found, creating basic test handler..."
+          # Fallback to simple test handler if file not found
+          cat > handler.py << HANDLER_EOF
         import json
-        import logging
-        
-        logging.basicConfig(level=logging.INFO)
-        logger = logging.getLogger(__name__)
-        
         def handle(data, context):
-            """
-            Simple handler function for TorchServe CI testing
-            Returns mock highlights to verify the pipeline works
-            """
-            try:
-                results = []
-                
-                for row in data:
-                    input_data = row.get("data") or row.get("body")
-                    if isinstance(input_data, str):
-                        input_data = json.loads(input_data)
-                
-                    # Return mock highlights for testing
-                    results.append({
-                        "highlights": [
-                            {"start": 0, "end": 10, "text": "OpenSearch"}
-                        ]
-                    })
-                
-                return results
-            except Exception as e:
-                logger.error(f"Error in handler: {str(e)}")
-                return [{"error": str(e)}]
+            results = []
+            for row in data:
+                input_data = row.get("data") or row.get("body")
+                if isinstance(input_data, str):
+                    input_data = json.loads(input_data)
+                results.append({"highlights": [{"start": 0, "end": 10}]})
+            return results
         HANDLER_EOF
+        fi
         
-        echo "✓ Handler file created successfully"
+        echo "✓ Handler file ready"
 
         # Download model files from HuggingFace
         echo "Downloading model files from HuggingFace..."
