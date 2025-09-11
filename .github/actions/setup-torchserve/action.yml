@@ -90,41 +90,41 @@ runs:
         
         # Create a simplified handler for testing
         echo "Creating simplified handler for CI testing..."
-        cat > handler.py << 'HANDLER_EOF'
-"""
-Simplified TorchServe Handler for Semantic Highlighter Model - CI Test Version
-"""
-import json
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def handle(data, context):
-    """
-    Simple handler function for TorchServe CI testing
-    Returns mock highlights to verify the pipeline works
-    """
-    try:
-        results = []
+        cat > handler.py << HANDLER_EOF
+        """
+        Simplified TorchServe Handler for Semantic Highlighter Model - CI Test Version
+        """
+        import json
+        import logging
         
-        for row in data:
-            input_data = row.get("data") or row.get("body")
-            if isinstance(input_data, str):
-                input_data = json.loads(input_data)
-            
-            # Return mock highlights for testing
-            results.append({
-                "highlights": [
-                    {"start": 0, "end": 10, "text": "OpenSearch"}
-                ]
-            })
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
         
-        return results
-    except Exception as e:
-        logger.error(f"Error in handler: {str(e)}")
-        return [{"error": str(e)}]
-HANDLER_EOF
+        def handle(data, context):
+            """
+            Simple handler function for TorchServe CI testing
+            Returns mock highlights to verify the pipeline works
+            """
+            try:
+                results = []
+                
+                for row in data:
+                    input_data = row.get("data") or row.get("body")
+                    if isinstance(input_data, str):
+                        input_data = json.loads(input_data)
+                
+                    # Return mock highlights for testing
+                    results.append({
+                        "highlights": [
+                            {"start": 0, "end": 10, "text": "OpenSearch"}
+                        ]
+                    })
+                
+                return results
+            except Exception as e:
+                logger.error(f"Error in handler: {str(e)}")
+                return [{"error": str(e)}]
+        HANDLER_EOF
         
         echo "✓ Handler file created successfully"
 
