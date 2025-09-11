@@ -270,6 +270,10 @@ def handle(data, context):
     """
     global model, tokenizer, device
     
+    # Handle initialization call (TorchServe calls with None data during init)
+    if data is None:
+        data = []
+    
     # Initialize on first call
     if model is None:
         properties = context.system_properties if hasattr(context, 'system_properties') else {}
