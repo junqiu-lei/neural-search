@@ -1,4 +1,5 @@
 name: Test TorchServe Setup Action
+# Dummy change to trigger CI - test run
 
 on:
   push:
