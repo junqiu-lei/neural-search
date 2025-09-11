@@ -146,14 +146,14 @@ runs:
 
         # Create a config file that auto-loads the model
         echo "Creating TorchServe config file..."
-        cat > config.properties << 'EOF'
-inference_address=http://0.0.0.0:8080
-management_address=http://0.0.0.0:8081
-metrics_address=http://0.0.0.0:8082
-model_store=/home/model-server/model-store
-load_models=semantic_highlighter.mar
-default_workers_per_model=1
-EOF
+        cat > config.properties << EOF
+        inference_address=http://0.0.0.0:8080
+        management_address=http://0.0.0.0:8081
+        metrics_address=http://0.0.0.0:8082
+        model_store=/home/model-server/model-store
+        load_models=semantic_highlighter.mar
+        default_workers_per_model=1
+        EOF
         
         # Copy MAR file and config to container
         echo "Copying MAR and config to container..."
