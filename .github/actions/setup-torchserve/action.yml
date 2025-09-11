@@ -48,10 +48,10 @@ runs:
 
         # Install dependencies in the container
         echo "Installing Python dependencies in container..."
-        docker exec $CONTAINER_ID pip install --no-cache-dir transformers==4.35.0 datasets nltk
+        docker exec $CONTAINER_ID pip install --no-cache-dir transformers==4.35.0 datasets nltk safetensors
 
         echo "Downloading NLTK data..."
-        docker exec $CONTAINER_ID python -c "import nltk; nltk.download('punkt')"
+        docker exec $CONTAINER_ID python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')" || true
 
         echo "✓ Dependencies installed"
 
@@ -181,8 +181,8 @@ runs:
         
         # Re-install dependencies after restart (workers need them)
         echo "Re-installing dependencies for workers..."
-        docker exec $CONTAINER_ID pip install --no-cache-dir transformers==4.35.0 datasets nltk
-        docker exec $CONTAINER_ID python -c "import nltk; nltk.download('punkt')"
+        docker exec $CONTAINER_ID pip install --no-cache-dir transformers==4.35.0 datasets nltk safetensors
+        docker exec $CONTAINER_ID python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')" || true
         
         # Verify model is loaded
         echo "Verifying model is loaded..."
@@ -197,18 +197,34 @@ runs:
           sleep 3
         done
 
+        # Wait a bit for workers to stabilize
+        echo "Waiting for workers to stabilize..."
+        sleep 5
+        
         # Test inference
         echo "Testing inference..."
         TEST_RESPONSE=$(curl -s -X POST http://localhost:8080/predictions/semantic_highlighter \
           -H "Content-Type: application/json" \
           -d '{"question": "What is OpenSearch?", "context": "OpenSearch is a search engine"}' || echo "{}")
 
-        if echo "$TEST_RESPONSE" | grep -q "tokens"; then
+        if echo "$TEST_RESPONSE" | grep -q "highlights"; then
           echo "✓ TorchServe model deployment successful!"
           echo "Response: $TEST_RESPONSE"
         else
           echo "ERROR: Model not responding correctly"
           echo "Response: $TEST_RESPONSE"
-          docker logs $CONTAINER_ID --tail 50
+          
+          # Get more detailed logs
+          echo "=== TorchServe Logs ==="
+          docker logs $CONTAINER_ID --tail 100
+          
+          # Check worker logs if available
+          echo "=== Worker Logs ==="
+          docker exec $CONTAINER_ID bash -c "cat logs/model_log.log 2>/dev/null || echo 'No worker logs found'"
+          
+          # Check if model files exist
+          echo "=== Model Files ==="
+          docker exec $CONTAINER_ID ls -la /home/model-server/model-store/
+          
           exit 1
         fi
