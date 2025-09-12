@@ -39,6 +39,10 @@ jobs:
           
           echo "Container status:"
           docker ps
+          
+          echo ""
+          echo "=== Initial Resource Usage (Container Started) ==="
+          docker stats torchserve --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}"
       
       - name: Setup TorchServe Model
         uses: ./.github/actions/setup-torchserve
@@ -52,15 +56,37 @@ jobs:
           curl -s http://localhost:8081/models | jq .
           
           echo ""
+          echo "=== Resource Usage After Model Loading ==="
+          docker stats torchserve --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}"
+          
+          # Check disk usage inside container
+          echo ""
+          echo "=== Disk Usage in Container ==="
+          docker exec torchserve df -h /home/model-server
+          
+          # Check model file sizes
+          echo ""
+          echo "=== Model Files Size ==="
+          docker exec torchserve ls -lh /home/model-server/model-store/
+          
+          echo ""
           echo "========================================="
           echo "Testing SINGLE document inference..."
           echo "========================================="
+          
+          # Monitor resources during inference
+          echo "Resources before single inference:"
+          docker stats torchserve --no-stream --format "CPU: {{.CPUPerc}} | Memory: {{.MemUsage}} ({{.MemPerc}})"
+          
           SINGLE_RESPONSE=$(curl -s -X POST http://localhost:8080/predictions/semantic_highlighter \
             -H "Content-Type: application/json" \
             -d '{
               "question": "What is batch processing?",
               "context": "Batch processing is a method of running high-volume, repetitive data jobs. The method allows users to process data when computing resources are available."
             }')
+          
+          echo "Resources after single inference:"
+          docker stats torchserve --no-stream --format "CPU: {{.CPUPerc}} | Memory: {{.MemUsage}} ({{.MemPerc}})"
           
           echo "Single document response:"
           echo "$SINGLE_RESPONSE" | jq .
@@ -79,6 +105,10 @@ jobs:
           echo "========================================="
           echo "Testing BATCH inference (multiple docs)..."
           echo "========================================="
+          
+          echo "Resources before batch inference:"
+          docker stats torchserve --no-stream --format "CPU: {{.CPUPerc}} | Memory: {{.MemUsage}} ({{.MemPerc}})"
+          
           BATCH_RESPONSE=$(curl -s -X POST http://localhost:8080/predictions/semantic_highlighter \
             -H "Content-Type: application/json" \
             -d '{
@@ -93,6 +123,9 @@ jobs:
                 }
               ]
             }')
+          
+          echo "Resources after batch inference:"
+          docker stats torchserve --no-stream --format "CPU: {{.CPUPerc}} | Memory: {{.MemUsage}} ({{.MemPerc}})"
           
           echo "Batch inference response:"
           echo "$BATCH_RESPONSE" | jq .
@@ -111,6 +144,15 @@ jobs:
           echo "========================================="
           echo "✓ ALL TESTS PASSED!"
           echo "========================================="
+          
+          echo ""
+          echo "=== Final Resource Summary ==="
+          docker stats torchserve --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}"
+          
+          # Get detailed memory breakdown
+          echo ""
+          echo "=== Detailed Memory Info ==="
+          docker exec torchserve cat /proc/meminfo | grep -E "MemTotal|MemFree|MemAvailable|Cached"
       
       - name: Show container logs on failure
         if: failure()
