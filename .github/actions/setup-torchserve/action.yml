@@ -30,7 +30,7 @@ runs:
       shell: bash
       run: |
         echo "Installing torch-model-archiver..."
-        pip install torch-model-archiver --no-cache-dir
+        pip install -q torch-model-archiver --no-cache-dir
 
     - name: Wait for TorchServe
       shell: bash
@@ -56,8 +56,8 @@ runs:
         echo "Found TorchServe container: $CONTAINER_ID"
         
         # Install dependencies in container
-        echo "Installing dependencies in container..."
-        docker exec $CONTAINER_ID pip install --no-cache-dir \
+        echo "Installing dependencies in container (this may take a moment)..."
+        docker exec $CONTAINER_ID pip install -q --no-cache-dir \
           transformers==4.35.0 \
           datasets \
           nltk \
@@ -71,7 +71,7 @@ runs:
             nltk.download('punkt_tab', quiet=True)
         except:
             pass
-        "
+        " 2>/dev/null
         echo "✓ Dependencies installed"
 
     - name: Check Model Status
@@ -143,7 +143,6 @@ runs:
         cat > config.properties << EOF
         inference_address=http://0.0.0.0:8080
         management_address=http://0.0.0.0:8081
-        metrics_address=http://0.0.0.0:8082
         model_store=/home/model-server/model-store
         load_models=${{ inputs.model-name }}.mar
         default_workers_per_model=1
@@ -164,7 +163,8 @@ runs:
         sleep 10
         
         # Re-install dependencies for workers
-        docker exec $CONTAINER_ID pip install --no-cache-dir \
+        echo "Installing worker dependencies..."
+        docker exec $CONTAINER_ID pip install -q --no-cache-dir \
           transformers==4.35.0 datasets nltk safetensors
         
         docker exec $CONTAINER_ID python -c "
@@ -174,7 +174,7 @@ runs:
             nltk.download('punkt_tab', quiet=True)
         except:
             pass
-        "
+        " 2>/dev/null
 
     - name: Verify Model Deployment
       shell: bash
