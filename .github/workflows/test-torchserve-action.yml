@@ -52,26 +52,65 @@ jobs:
           curl -s http://localhost:8081/models | jq .
           
           echo ""
-          echo "Testing model inference..."
-          RESPONSE=$(curl -s -X POST http://localhost:8080/predictions/semantic_highlighter \
+          echo "========================================="
+          echo "Testing SINGLE document inference..."
+          echo "========================================="
+          SINGLE_RESPONSE=$(curl -s -X POST http://localhost:8080/predictions/semantic_highlighter \
             -H "Content-Type: application/json" \
             -d '{
               "question": "What is batch processing?",
               "context": "Batch processing is a method of running high-volume, repetitive data jobs. The method allows users to process data when computing resources are available."
             }')
           
-          echo "Response from model:"
-          echo "$RESPONSE" | jq .
+          echo "Single document response:"
+          echo "$SINGLE_RESPONSE" | jq .
           
           # Check if response contains expected fields
-          if echo "$RESPONSE" | grep -q "highlights"; then
-            echo "✓ Model inference successful!"
+          if echo "$SINGLE_RESPONSE" | grep -q "highlights"; then
+            echo "✓ Single document inference successful!"
           else
-            echo "✗ Model inference failed!"
+            echo "✗ Single document inference failed!"
             echo "Container logs:"
             docker logs torchserve --tail 50
             exit 1
           fi
+          
+          echo ""
+          echo "========================================="
+          echo "Testing BATCH inference (multiple docs)..."
+          echo "========================================="
+          BATCH_RESPONSE=$(curl -s -X POST http://localhost:8080/predictions/semantic_highlighter \
+            -H "Content-Type: application/json" \
+            -d '{
+              "inputs": [
+                {
+                  "question": "What is OpenSearch?",
+                  "context": "OpenSearch is a scalable, flexible, and extensible open-source software suite for search, analytics, and observability applications."
+                },
+                {
+                  "question": "What is machine learning?",
+                  "context": "Machine learning is a branch of artificial intelligence that focuses on the use of data and algorithms to imitate human learning."
+                }
+              ]
+            }')
+          
+          echo "Batch inference response:"
+          echo "$BATCH_RESPONSE" | jq .
+          
+          # Check if batch response has highlights array with 2 results
+          if echo "$BATCH_RESPONSE" | jq -e '.highlights | length == 2' > /dev/null 2>&1; then
+            echo "✓ Batch inference successful! Processed 2 documents."
+          else
+            echo "✗ Batch inference failed!"
+            echo "Container logs:"
+            docker logs torchserve --tail 50
+            exit 1
+          fi
+          
+          echo ""
+          echo "========================================="
+          echo "✓ ALL TESTS PASSED!"
+          echo "========================================="
       
       - name: Show container logs on failure
         if: failure()
