@@ -79,7 +79,9 @@ runs:
       shell: bash
       run: |
         # Check if model is already loaded
-        MODEL_STATUS=$(curl -s ${{ inputs.torchserve-endpoint }}81/models 2>/dev/null || echo "[]")
+        # Construct management API URL (port 8081)
+        MGMT_URL="http://localhost:8081"
+        MODEL_STATUS=$(curl -s "${MGMT_URL}/models" 2>/dev/null || echo "[]")
         
         if echo "$MODEL_STATUS" | grep -q "${{ inputs.model-name }}"; then
           echo "Model '${{ inputs.model-name }}' is already loaded"
@@ -180,9 +182,10 @@ runs:
         # Wait for model to be ready
         echo "Waiting for model to be ready..."
         MAX_ATTEMPTS=20
+        MGMT_URL="http://localhost:8081"
         
         for i in $(seq 1 $MAX_ATTEMPTS); do
-          MODEL_STATUS=$(curl -s ${{ inputs.torchserve-endpoint }}81/models 2>/dev/null || echo "{}")
+          MODEL_STATUS=$(curl -s "${MGMT_URL}/models" 2>/dev/null || echo "{}")
           if echo "$MODEL_STATUS" | grep -q "${{ inputs.model-name }}"; then
             echo "✓ Model '${{ inputs.model-name }}' is loaded"
             break
