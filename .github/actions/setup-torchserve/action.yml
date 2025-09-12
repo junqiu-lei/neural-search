@@ -12,7 +12,7 @@ inputs:
   handler-path:
     description: 'Path to the TorchServe handler file'
     required: false
-    default: 'src/test/resources/remote-models/torchserve/handlers/torchserve_handler_simple.py'
+    default: 'src/test/resources/remote-models/torchserve/handlers/semantic_highlighting_handler.py'
   model-name:
     description: 'Name of the model to deploy'
     required: false
