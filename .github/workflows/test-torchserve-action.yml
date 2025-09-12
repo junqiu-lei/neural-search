@@ -31,7 +31,7 @@ jobs:
             --name torchserve \
             -p 8080:8080 \
             -p 8081:8081 \
-            pytorch/torchserve:0.11.0-cpu \
+            pytorch/torchserve:0.12.0-cpu \
             torchserve --start --model-store /home/model-server/model-store --ts-config /home/model-server/config.properties
           
           # Give container time to start
