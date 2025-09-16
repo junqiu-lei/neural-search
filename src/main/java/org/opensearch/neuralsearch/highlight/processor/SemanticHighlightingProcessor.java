@@ -17,6 +17,7 @@ import org.opensearch.neuralsearch.highlight.SemanticHighlightingConstants;
 import org.opensearch.neuralsearch.highlight.strategies.BatchHighlighter;
 import org.opensearch.neuralsearch.highlight.strategies.SingleHighlighter;
 import org.opensearch.neuralsearch.ml.MLCommonsClientAccessor;
+import org.opensearch.search.fetch.subphase.highlight.HighlightBuilder;
 import org.opensearch.search.pipeline.PipelineProcessingContext;
 import org.opensearch.search.pipeline.SearchResponseProcessor;
 import org.opensearch.search.pipeline.SystemGeneratedProcessor;
@@ -28,23 +29,17 @@ import org.opensearch.search.pipeline.SystemGeneratedProcessor;
  * storing configuration at pipeline creation time.
  */
 @Log4j2
-public class SystemGeneratedSemanticHighlightingProcessor implements SearchResponseProcessor, SystemGeneratedProcessor {
+public class SemanticHighlightingProcessor implements SearchResponseProcessor, SystemGeneratedProcessor {
 
-    private final String tag;
-    private final String description;
     private final boolean ignoreFailure;
     private final MLCommonsClientAccessor mlClientAccessor;
     private final HighlightRequestValidator validator;
     private final HighlightRequestPreparer preparer;
 
-    public SystemGeneratedSemanticHighlightingProcessor(
-        String tag,
-        String description,
+    public SemanticHighlightingProcessor(
         boolean ignoreFailure,
         MLCommonsClientAccessor mlClientAccessor
     ) {
-        this.tag = tag;
-        this.description = description;
         this.ignoreFailure = ignoreFailure;
         this.mlClientAccessor = mlClientAccessor;
         this.validator = new HighlightRequestValidator();
@@ -64,10 +59,7 @@ public class SystemGeneratedSemanticHighlightingProcessor implements SearchRespo
             // Extract model_id and configuration from query-level options
             HighlightRequestValidator.ValidationResult validation = validator.validate(
                 request,
-                response,
-                null,
-                SemanticHighlightingConstants.DEFAULT_PRE_TAG,
-                SemanticHighlightingConstants.DEFAULT_POST_TAG
+                response
             );
 
             if (!validation.isValid()) {
@@ -152,12 +144,12 @@ public class SystemGeneratedSemanticHighlightingProcessor implements SearchRespo
 
     @Override
     public String getTag() {
-        return tag;
+        return SemanticHighlightingConstants.DEFAULT_PROCESSOR_TAG;
     }
 
     @Override
     public String getDescription() {
-        return description;
+        return SemanticHighlightingConstants.DEFAULT_PROCESSOR_DESCRIPTION;
     }
 
     @Override
