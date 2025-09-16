@@ -57,10 +57,7 @@ public class SemanticHighlightingIT extends BaseNeuralSearchIT {
 
                 // Create connector and deploy single remote model
                 remoteHighlightConnectorId = createRemoteModelConnector(torchServeEndpoint);
-                remoteHighlightModelId = deployRemoteSemanticHighlightingModel(
-                    remoteHighlightConnectorId,
-                    "semantic-highlighter-remote"
-                );
+                remoteHighlightModelId = deployRemoteSemanticHighlightingModel(remoteHighlightConnectorId, "semantic-highlighter-remote");
                 log.info("Deployed remote semantic highlighting model, model ID: {}", remoteHighlightModelId);
 
                 // Create simple index

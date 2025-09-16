@@ -27,10 +27,7 @@ public class HighlightRequestValidator {
     /**
      * Validate the search request and extract necessary information
      */
-    public ValidationResult validate(
-        SearchRequest request,
-        SearchResponse response
-    ) {
+    public ValidationResult validate(SearchRequest request, SearchResponse response) {
         try {
             // Basic validation
             if (request == null) {
@@ -53,7 +50,6 @@ public class HighlightRequestValidator {
             }
 
             HighlightBuilder highlightBuilder = request.source().highlighter();
-
 
             // Extract model ID
             String modelId = extractModelId(highlightBuilder);
@@ -142,10 +138,8 @@ public class HighlightRequestValidator {
     }
 
     private enum TagType {
-        PRE_TAG(SemanticHighlightingConstants.PRE_TAG,
-                SemanticHighlightingConstants.DEFAULT_PRE_TAG),
-        POST_TAG(SemanticHighlightingConstants.POST_TAG,
-                SemanticHighlightingConstants.DEFAULT_POST_TAG);
+        PRE_TAG(SemanticHighlightingConstants.PRE_TAG, SemanticHighlightingConstants.DEFAULT_PRE_TAG),
+        POST_TAG(SemanticHighlightingConstants.POST_TAG, SemanticHighlightingConstants.DEFAULT_POST_TAG);
 
         final String optionKey;
         final String defaultValue;
@@ -165,16 +159,13 @@ public class HighlightRequestValidator {
     }
 
     private String extractTag(HighlightBuilder highlighter, TagType tagType) {
-        String[] tags = (tagType == TagType.PRE_TAG)
-                ? highlighter.preTags()
-                : highlighter.postTags();
+        String[] tags = (tagType == TagType.PRE_TAG) ? highlighter.preTags() : highlighter.postTags();
 
         if (tags != null && tags.length > 0) {
             return tags[0];
         }
 
-        return extractHighlightOption(highlighter, tagType.optionKey,
-                tagType.defaultValue);
+        return extractHighlightOption(highlighter, tagType.optionKey, tagType.defaultValue);
     }
 
     /**
@@ -195,7 +186,8 @@ public class HighlightRequestValidator {
      * Extract max_inference_batch_size from highlight options
      */
     public int extractMaxBatchSize(Map<String, Object> highlightBuilderOptions) {
-        if (highlightBuilderOptions != null && highlightBuilderOptions.containsKey(SemanticHighlightingConstants.MAX_INFERENCE_BATCH_SIZE)) {
+        if (highlightBuilderOptions != null
+            && highlightBuilderOptions.containsKey(SemanticHighlightingConstants.MAX_INFERENCE_BATCH_SIZE)) {
             Object value = highlightBuilderOptions.get(SemanticHighlightingConstants.MAX_INFERENCE_BATCH_SIZE);
             if (value instanceof Number) {
                 return ((Number) value).intValue();
