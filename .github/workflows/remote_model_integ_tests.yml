@@ -15,32 +15,23 @@ on:
 
 jobs:
   Get-CI-Image-Tag:
-    runs-on: ubuntu-latest
-    outputs:
-      ci-image-version-linux: ${{ steps.step-ci-image-version-linux.outputs.ci-image-version-linux }}
-    steps:
-      - name: Install crane
-        uses: iarekylew00t/crane-installer@v1
-        with:
-          crane-release: v0.15.2
-      - name: Checkout neural-search
-        uses: actions/checkout@v4
-      - id: step-ci-image-version-linux
-        name: Check CI image version
-        run: |
-          TAG=`crane ls opensearchstaging/ci-runner | grep ".*v[0-9]*" | tail -1`
-          echo "ci-image-version-linux=$TAG" >> $GITHUB_OUTPUT
+    uses: opensearch-project/opensearch-build/.github/workflows/get-ci-image-tag.yml@main
+    with:
+      product: opensearch
 
   single-node-tests:
     needs: Get-CI-Image-Tag
     runs-on: ubuntu-latest
     container:
-      image: opensearchstaging/ci-runner:${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
-      options: --user 1001
+      image: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
+      options: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-options }}
     strategy:
       matrix:
         java: [21, 24]
     steps:
+      - name: Run start commands
+        run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
+
       - name: Checkout neural-search
         uses: actions/checkout@v4
 
@@ -52,7 +43,8 @@ jobs:
 
       - name: Run single-node remote model tests
         run: |
-          ./gradlew remoteModelIntegTest --console=plain
+          chown -R 1000:1000 `pwd`
+          su `id -un 1000` -c "./gradlew remoteModelIntegTest --console=plain"
 
       - name: Upload test reports
         if: always()
@@ -68,13 +60,16 @@ jobs:
     needs: Get-CI-Image-Tag
     runs-on: ubuntu-latest
     container:
-      image: opensearchstaging/ci-runner:${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
-      options: --user 1001
+      image: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
+      options: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-options }}
     strategy:
       matrix:
         nodes: [3]
         java: [21]
     steps:
+      - name: Run start commands
+        run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
+
       - name: Checkout neural-search
         uses: actions/checkout@v4
 
@@ -86,9 +81,8 @@ jobs:
 
       - name: Run multi-node remote model tests
         run: |
-          ./gradlew remoteModelIntegTest \
-            -PnumNodes=${{ matrix.nodes }} \
-            --console=plain
+          chown -R 1000:1000 `pwd`
+          su `id -un 1000` -c "./gradlew remoteModelIntegTest -PnumNodes=${{ matrix.nodes }} --console=plain"
 
       - name: Upload test reports
         if: always()
@@ -118,9 +112,9 @@ jobs:
 
           # Check for test results
           if [ -f "build/reports/remote-model-tests/index.html" ]; then
-            echo "✅ Tests completed. Check artifacts for detailed reports." >> $GITHUB_STEP_SUMMARY
+            echo "Tests completed. Check artifacts for detailed reports." >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ Test reports not found. Check logs for details." >> $GITHUB_STEP_SUMMARY
+            echo "Test reports not found. Check logs for details." >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
