@@ -526,6 +526,14 @@ task remoteModelIntegTest(type: RestIntegTestTask) {
     def runScript = file("src/test/resources/remote-models/torchserve/scripts/run.sh")
 
     doFirst {
+        // Create tmp directory for CI environments to avoid cross-filesystem issues
+        if (System.getenv("CI") != null || System.getenv("GITHUB_ACTIONS") != null) {
+            def tmpDir = file("${buildDir}/tmp")
+            if (!tmpDir.exists()) {
+                tmpDir.mkdirs()
+            }
+        }
+
         // Check Docker availability
         if (!isDockerAvailable()) {
             throw new GradleException("Docker is not available. Please install Docker to run remote model tests.")
@@ -583,6 +591,14 @@ task remoteModelIntegTest(type: RestIntegTestTask) {
 // Configure test cluster for remoteModelIntegTest
 testClusters.remoteModelIntegTest {
     testDistribution = "ARCHIVE"
+
+    // Set extract location to avoid cross-filesystem hard link issues in CI
+    // This ensures the OpenSearch distribution is extracted in the same filesystem as the build directory
+    if (System.getenv("CI") != null || System.getenv("GITHUB_ACTIONS") != null) {
+        // In CI, use the build directory to avoid /tmp filesystem issues
+        setting 'path.repo', "${buildDir}/cluster-shared-repo"
+        environment 'OPENSEARCH_JAVA_OPTS', '-Djava.io.tmpdir=' + "${buildDir}/tmp"
+    }
 
     // Install plugins
     configurations.zipArchive.asFileTree.each {

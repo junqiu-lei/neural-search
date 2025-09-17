@@ -44,9 +44,11 @@ jobs:
           java-version: ${{ matrix.java }}
 
       - name: Run single-node remote model tests
+        env:
+          CI: true
         run: |
           chown -R 1000:1000 `pwd`
-          su `id -un 1000` -c "./gradlew remoteModelIntegTest --info"
+          su `id -un 1000` -c "CI=true ./gradlew remoteModelIntegTest --info"
 
       - name: Upload test reports
         if: always()
@@ -82,9 +84,11 @@ jobs:
           java-version: ${{ matrix.java }}
 
       - name: Run multi-node remote model tests
+        env:
+          CI: true
         run: |
           chown -R 1000:1000 `pwd`
-          su `id -un 1000` -c "./gradlew remoteModelIntegTest -PnumNodes=${{ matrix.nodes }} --info"
+          su `id -un 1000` -c "CI=true ./gradlew remoteModelIntegTest -PnumNodes=${{ matrix.nodes }} --info"
 
       - name: Upload test reports
         if: always()
