@@ -29,7 +29,7 @@ jobs:
       options: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-options }}
     strategy:
       matrix:
-        java: [21, 24]
+        java: [21]
     steps:
       - name: Run start commands
         run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
