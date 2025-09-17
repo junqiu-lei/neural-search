@@ -46,7 +46,7 @@ jobs:
       - name: Run single-node remote model tests
         run: |
           chown -R 1000:1000 `pwd`
-          su `id -un 1000` -c "./gradlew remoteModelIntegTest --console=plain"
+          su `id -un 1000` -c "./gradlew remoteModelIntegTest --info"
 
       - name: Upload test reports
         if: always()
@@ -84,7 +84,7 @@ jobs:
       - name: Run multi-node remote model tests
         run: |
           chown -R 1000:1000 `pwd`
-          su `id -un 1000` -c "./gradlew remoteModelIntegTest -PnumNodes=${{ matrix.nodes }} --console=plain"
+          su `id -un 1000` -c "./gradlew remoteModelIntegTest -PnumNodes=${{ matrix.nodes }} --info"
 
       - name: Upload test reports
         if: always()
