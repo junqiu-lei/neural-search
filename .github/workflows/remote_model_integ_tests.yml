@@ -1,12 +1,14 @@
 name: Remote Model Integration Tests
 
 on:
+  workflow_dispatch:  # Allow manual triggering
   schedule:
     - cron: '0 0 * * *'  # every night
   push:
     branches:
       - "*"
       - "feature/**"
+      - "highlighting-processor-fix-ci-1"  # Explicitly include test branch
   pull_request:
     branches:
       - "*"
