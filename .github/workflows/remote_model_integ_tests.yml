@@ -16,24 +16,12 @@ on:
 
 
 jobs:
-  Get-CI-Image-Tag:
-    uses: opensearch-project/opensearch-build/.github/workflows/get-ci-image-tag.yml@main
-    with:
-      product: opensearch
-
   single-node-tests:
-    needs: Get-CI-Image-Tag
     runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
-      options: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-options }}
     strategy:
       matrix:
         java: [21]
     steps:
-      - name: Run start commands
-        run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
-
       - name: Checkout neural-search
         uses: actions/checkout@v4
 
@@ -47,8 +35,7 @@ jobs:
         env:
           CI: true
         run: |
-          chown -R 1000:1000 `pwd`
-          su `id -un 1000` -c "CI=true ./gradlew remoteModelIntegTest --info"
+          ./gradlew remoteModelIntegTest --info
 
       - name: Upload test reports
         if: always()
@@ -61,19 +48,12 @@ jobs:
           retention-days: 7
 
   multi-node-tests:
-    needs: Get-CI-Image-Tag
     runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
-      options: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-options }}
     strategy:
       matrix:
         nodes: [3]
         java: [21]
     steps:
-      - name: Run start commands
-        run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
-
       - name: Checkout neural-search
         uses: actions/checkout@v4
 
@@ -87,8 +67,7 @@ jobs:
         env:
           CI: true
         run: |
-          chown -R 1000:1000 `pwd`
-          su `id -un 1000` -c "CI=true ./gradlew remoteModelIntegTest -PnumNodes=${{ matrix.nodes }} --info"
+          ./gradlew remoteModelIntegTest -PnumNodes=${{ matrix.nodes }} --info
 
       - name: Upload test reports
         if: always()
@@ -125,5 +104,5 @@ jobs:
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Test Configurations" >> $GITHUB_STEP_SUMMARY
-          echo "- Single-node: Java 21, 24" >> $GITHUB_STEP_SUMMARY
+          echo "- Single-node: Java 21" >> $GITHUB_STEP_SUMMARY
           echo "- Multi-node (3 nodes): Java 21" >> $GITHUB_STEP_SUMMARY
