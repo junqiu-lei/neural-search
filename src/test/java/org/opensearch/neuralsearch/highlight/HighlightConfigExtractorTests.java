@@ -6,6 +6,8 @@ package org.opensearch.neuralsearch.highlight;
 
 import org.junit.Before;
 import org.mockito.Mock;
+import org.opensearch.neuralsearch.highlight.batch.config.HighlightConfigExtractor;
+import org.opensearch.neuralsearch.highlight.batch.config.HighlightConfig;
 import org.mockito.MockitoAnnotations;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchResponse;

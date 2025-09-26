@@ -5,6 +5,8 @@
 package org.opensearch.neuralsearch.highlight;
 
 import org.opensearch.action.search.SearchResponse;
+import org.opensearch.neuralsearch.highlight.batch.validation.HighlightValidator;
+import org.opensearch.neuralsearch.highlight.batch.config.HighlightConfig;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.SearchHits;
 import org.opensearch.test.OpenSearchTestCase;

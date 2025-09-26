@@ -27,6 +27,8 @@ import org.opensearch.index.mapper.Mapper;
 import org.opensearch.indices.breaker.BreakerSettings;
 import org.opensearch.ml.client.MachineLearningNodeClient;
 import org.opensearch.neuralsearch.highlight.SemanticHighlighter;
+import org.opensearch.neuralsearch.highlight.single.SemanticHighlighterEngine;
+import org.opensearch.neuralsearch.highlight.single.extractor.QueryTextExtractorRegistry;
 import com.google.common.collect.ImmutableList;
 import lombok.extern.log4j.Log4j2;
 import org.opensearch.action.ActionRequest;
@@ -48,7 +50,6 @@ import org.opensearch.neuralsearch.mapper.SemanticFieldMapper;
 import org.opensearch.neuralsearch.mappingtransformer.SemanticMappingTransformer;
 import org.opensearch.neuralsearch.processor.factory.SemanticFieldProcessorFactory;
 import org.opensearch.plugins.MapperPlugin;
-import org.opensearch.search.pipeline.SearchPipelineService;
 import org.opensearch.search.query.QueryCollectorContextSpecFactory;
 import org.opensearch.search.query.QueryPhaseSearcher;
 import org.opensearch.transport.client.Client;
@@ -113,7 +114,7 @@ import org.opensearch.neuralsearch.processor.combination.ScoreCombiner;
 import org.opensearch.neuralsearch.processor.factory.ExplanationResponseProcessorFactory;
 import org.opensearch.neuralsearch.processor.factory.NormalizationProcessorFactory;
 import org.opensearch.neuralsearch.processor.factory.RRFProcessorFactory;
-import org.opensearch.neuralsearch.highlight.processor.SemanticHighlightingFactory;
+import org.opensearch.neuralsearch.highlight.batch.processor.SemanticHighlightingFactory;
 import org.opensearch.neuralsearch.highlight.SemanticHighlightingConstants;
 import org.opensearch.neuralsearch.processor.factory.TextChunkingProcessorFactory;
 import org.opensearch.neuralsearch.processor.factory.RerankProcessorFactory;
@@ -187,6 +188,8 @@ public class NeuralSearch extends Plugin
     private NeuralSearchSettingsAccessor settingsAccessor;
     private PipelineServiceUtil pipelineServiceUtil;
     private InfoStatsManager infoStatsManager;
+    private ClusterService clusterService;
+    private SemanticHighlighterEngine semanticHighlighterEngine;
     private final ScoreNormalizationFactory scoreNormalizationFactory = new ScoreNormalizationFactory();
     private final ScoreCombinationFactory scoreCombinationFactory = new ScoreCombinationFactory();
     public static final String EXPLANATION_RESPONSE_KEY = "explanation_response";
@@ -206,6 +209,7 @@ public class NeuralSearch extends Plugin
         final IndexNameExpressionResolver indexNameExpressionResolver,
         final Supplier<RepositoriesService> repositoriesServiceSupplier
     ) {
+        this.clusterService = clusterService;
         NeuralSearchClusterUtil.instance().initialize(clusterService, indexNameExpressionResolver);
         NeuralQueryBuilder.initialize(clientAccessor);
         NeuralSparseQueryBuilder.initialize(clientAccessor);
@@ -218,6 +222,14 @@ public class NeuralSearch extends Plugin
         EventStatsManager.instance().initialize(settingsAccessor);
         this.xContentRegistry = xContentRegistry;
         ClusterTrainingExecutor.getInstance().initialize(threadPool);
+
+        // Initialize SemanticHighlighterEngine for legacy non-batch highlighting
+        QueryTextExtractorRegistry queryTextExtractorRegistry = new QueryTextExtractorRegistry();
+        this.semanticHighlighterEngine = SemanticHighlighterEngine.builder()
+            .mlCommonsClient(clientAccessor)
+            .queryTextExtractorRegistry(queryTextExtractorRegistry)
+            .build();
+
         return List.of(clientAccessor, EventStatsManager.instance(), infoStatsManager);
     }
 
@@ -342,12 +354,11 @@ public class NeuralSearch extends Plugin
 
     @Override
     public Settings additionalSettings() {
-        return Settings.builder()
-            .putList(
-                SearchPipelineService.ENABLED_SYSTEM_GENERATED_FACTORIES_SETTING.getKey(),
-                SemanticHighlightingConstants.SYSTEM_FACTORY_TYPE
-            )
-            .build();
+        // System processor for batch semantic highlighting is not enabled by default
+        // Users must explicitly enable it in opensearch.yml:
+        // search.pipeline.enabled_system_generated_factories:
+        // ["org.opensearch.neuralsearch.highlight.SemanticHighlightingProcessorFactory"]
+        return Settings.EMPTY;
     }
 
     @Override
@@ -404,12 +415,20 @@ public class NeuralSearch extends Plugin
     }
 
     /**
-     * Register minimal semantic highlighter for type validation
-     * Actual highlighting is done by SemanticHighlightingProcessor
+     * Register hybrid semantic highlighter that supports both batch and non-batch modes
+     * - Batch mode: Requires system processor to be explicitly enabled
+     * - Non-batch mode: Uses legacy highlighting for backward compatibility
      */
     @Override
     public Map<String, Highlighter> getHighlighters() {
-        return Collections.singletonMap(SemanticHighlighter.NAME, new SemanticHighlighter());
+        SemanticHighlighter highlighter = new SemanticHighlighter();
+        if (semanticHighlighterEngine != null) {
+            highlighter.initialize(semanticHighlighterEngine);
+        }
+        if (clusterService != null) {
+            highlighter.setClusterService(clusterService);
+        }
+        return Collections.singletonMap(SemanticHighlighter.NAME, highlighter);
     }
 
     @Override

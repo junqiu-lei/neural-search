@@ -5,20 +5,13 @@
 package org.opensearch.neuralsearch.highlight;
 
 import org.junit.Before;
-import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.opensearch.index.mapper.MappedFieldType;
-import org.opensearch.search.fetch.subphase.highlight.FieldHighlightContext;
-import org.opensearch.search.fetch.subphase.highlight.HighlightField;
 import org.opensearch.test.OpenSearchTestCase;
 
+import static org.mockito.Mockito.mock;
+
 public class SemanticHighlighterTests extends OpenSearchTestCase {
-
-    @Mock
-    private MappedFieldType fieldType;
-
-    @Mock
-    private FieldHighlightContext fieldContext;
 
     private SemanticHighlighter highlighter;
 
@@ -31,21 +24,11 @@ public class SemanticHighlighterTests extends OpenSearchTestCase {
 
     public void testCanHighlightAlwaysReturnsTrue() {
         // Test with any field type - should always return true
+        MappedFieldType fieldType = mock(MappedFieldType.class);
         assertTrue(highlighter.canHighlight(fieldType));
 
         // Test with null - should still return true
         assertTrue(highlighter.canHighlight(null));
-    }
-
-    public void testHighlightAlwaysReturnsNull() {
-        // The highlight method should always return null
-        // Actual highlighting is done by SemanticHighlightingProcessor
-        HighlightField result = highlighter.highlight(fieldContext);
-        assertNull(result);
-
-        // Test with null context
-        HighlightField resultWithNull = highlighter.highlight(null);
-        assertNull(resultWithNull);
     }
 
     public void testHighlighterName() {
@@ -56,8 +39,10 @@ public class SemanticHighlighterTests extends OpenSearchTestCase {
 
     public void testHighlighterPurpose() {
         // This test documents the purpose of the SemanticHighlighter
-        // It's a minimal implementation that only validates the "semantic" type
-        // The actual highlighting work is delegated to SemanticHighlightingProcessor
+        // It handles both batch and non-batch modes:
+        // - For batch mode (batch_inference=true): validates system processor is enabled, returns null for processing by
+        // SemanticHighlightingProcessor
+        // - For non-batch mode (batch_inference=false/not set): performs actual highlighting using SemanticHighlighterEngine
 
         // Verify it can highlight any field type
         MappedFieldType textField = mock(MappedFieldType.class);
@@ -68,13 +53,8 @@ public class SemanticHighlighterTests extends OpenSearchTestCase {
         assertTrue(highlighter.canHighlight(keywordField));
         assertTrue(highlighter.canHighlight(numericField));
 
-        // Verify it doesn't actually perform highlighting
-        FieldHighlightContext context = mock(FieldHighlightContext.class);
-        assertNull(highlighter.highlight(context));
-    }
-
-    // Helper method for mocking
-    private <T> T mock(Class<T> classToMock) {
-        return org.mockito.Mockito.mock(classToMock);
+        // Note: Testing the actual highlight() method requires complex mocking of internal OpenSearch classes
+        // The integration tests in the main test suite will verify the highlighting behavior end-to-end
+        // This unit test focuses on the basic contract of the highlighter
     }
 }
