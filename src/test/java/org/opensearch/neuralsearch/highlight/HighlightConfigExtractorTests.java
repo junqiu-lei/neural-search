@@ -307,8 +307,8 @@ public class HighlightConfigExtractorTests extends OpenSearchTestCase {
 
         Map<String, Object> options = new HashMap<>();
         options.put(SemanticHighlightingConstants.MODEL_ID, 123);  // Wrong type - should be ignored
-        options.put(SemanticHighlightingConstants.BATCH_INFERENCE, "true");  // Wrong type - should default to false
-        options.put(SemanticHighlightingConstants.MAX_INFERENCE_BATCH_SIZE, "100");  // Wrong type - should use default
+        options.put(SemanticHighlightingConstants.BATCH_INFERENCE, "true");  // String type - should parse to true
+        options.put(SemanticHighlightingConstants.MAX_INFERENCE_BATCH_SIZE, "100");  // String type - should parse to 100
         highlightBuilder.options(options);
         highlightBuilder.field(field);
 
@@ -318,10 +318,10 @@ public class HighlightConfigExtractorTests extends OpenSearchTestCase {
         // Execute
         HighlightConfig config = extractor.extract(request, searchResponse);
 
-        // Verify - invalid types should be ignored or use defaults
+        // Verify - string values for batch options are now supported and parsed
         assertNotNull(config);
-        assertNull(config.getModelId());  // Invalid type, so null
-        assertFalse(config.isBatchInference());  // Invalid type, so default false
-        assertEquals(SemanticHighlightingConstants.DEFAULT_MAX_INFERENCE_BATCH_SIZE, config.getMaxBatchSize());
+        assertNull(config.getModelId());  // Invalid type (integer), so null
+        assertTrue(config.isBatchInference());  // String "true" parsed to boolean true
+        assertEquals(100, config.getMaxBatchSize());  // String "100" parsed to int 100
     }
 }

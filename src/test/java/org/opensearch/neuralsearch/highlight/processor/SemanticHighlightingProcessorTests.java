@@ -422,30 +422,16 @@ public class SemanticHighlightingProcessorTests extends OpenSearchTestCase {
     }
 
     public void testEnrichConfigFromConnector() {
+        // Test that batch configuration now comes from query options, not connector
         // Setup mocks
         MLCommonsClientAccessor mlAccessor = mock(MLCommonsClientAccessor.class);
         org.opensearch.ml.common.MLModel remoteModel = mock(org.opensearch.ml.common.MLModel.class);
-        org.opensearch.ml.common.connector.HttpConnector connector = mock(org.opensearch.ml.common.connector.HttpConnector.class);
 
-        // Setup connector with batch parameters
-        Map<String, String> params = new HashMap<>();
-        params.put(SemanticHighlightingConstants.CONNECTOR_SUPPORTS_BATCH_INFERENCE, "true");
-        params.put(SemanticHighlightingConstants.CONNECTOR_MAX_BATCH_SIZE, "75");
-        when(connector.getParameters()).thenReturn(params);
-
-        // Setup remote model with connector
+        // Setup remote model (connector no longer matters for batch config)
         when(remoteModel.getAlgorithm()).thenReturn(org.opensearch.ml.common.FunctionName.REMOTE);
-        when(remoteModel.getConnector()).thenReturn(connector);
 
         // Create processor
         SemanticHighlightingProcessor processor = new SemanticHighlightingProcessor(false, mlAccessor);
-
-        // Create initial config
-        HighlightConfig initialConfig = HighlightConfig.builder()
-            .fieldName("content")
-            .modelId("test-model")
-            .queryText("test query")
-            .build();
 
         // Test enrichment
         doAnswer(invocation -> {
@@ -478,7 +464,9 @@ public class SemanticHighlightingProcessorTests extends OpenSearchTestCase {
 
         Map<String, Object> options = new HashMap<>();
         options.put(SemanticHighlightingConstants.MODEL_ID, "test-model");
-        options.put("query_text", "test query");  // Add explicit query text
+        // Batch configuration now comes from query options
+        options.put("batch_inference", true);
+        options.put("max_batch_size", 75);
         highlightBuilder.options(options);
         sourceBuilder.highlighter(highlightBuilder);
         request.source(sourceBuilder);

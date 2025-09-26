@@ -47,12 +47,18 @@ public class HighlightConfigExtractor {
             String modelId = extractModelId(highlighter);
             String queryText = extractQueryText(request);
 
+            // Extract batch inference settings from options
+            boolean batchInference = extractBatchInference(highlighter);
+            int maxBatchSize = extractMaxBatchSize(highlighter);
+
             return HighlightConfig.builder()
                 .fieldName(fieldName)      // Can be null
                 .modelId(modelId)          // Can be null
                 .queryText(queryText)      // Can be null
                 .preTag(extractPreTag(highlighter))
                 .postTag(extractPostTag(highlighter))
+                .batchInference(batchInference)
+                .maxBatchSize(maxBatchSize)
                 .build();
 
         } catch (Exception e) {
@@ -146,5 +152,41 @@ public class HighlightConfigExtractor {
         }
 
         return defaultValue;
+    }
+
+    private boolean extractBatchInference(HighlightBuilder highlighter) {
+        // Check global highlighter options first
+        Map<String, Object> options = highlighter.options();
+        if (options != null && options.containsKey("batch_inference")) {
+            Object value = options.get("batch_inference");
+            if (value instanceof Boolean) {
+                return (Boolean) value;
+            } else if (value instanceof String) {
+                return Boolean.parseBoolean((String) value);
+            }
+        }
+
+        // Default is false
+        return false;
+    }
+
+    private int extractMaxBatchSize(HighlightBuilder highlighter) {
+        // Check global highlighter options first
+        Map<String, Object> options = highlighter.options();
+        if (options != null && options.containsKey("max_batch_size")) {
+            Object value = options.get("max_batch_size");
+            if (value instanceof Number) {
+                return ((Number) value).intValue();
+            } else if (value instanceof String) {
+                try {
+                    return Integer.parseInt((String) value);
+                } catch (NumberFormatException e) {
+                    log.warn("Invalid max_batch_size value: {}, using default", value);
+                }
+            }
+        }
+
+        // Default is 100
+        return SemanticHighlightingConstants.DEFAULT_MAX_INFERENCE_BATCH_SIZE;
     }
 }
