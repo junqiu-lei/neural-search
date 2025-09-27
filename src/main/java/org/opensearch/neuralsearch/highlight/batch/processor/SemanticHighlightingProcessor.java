@@ -12,10 +12,9 @@ import org.opensearch.ml.common.FunctionName;
 import org.opensearch.neuralsearch.highlight.SemanticHighlightingConstants;
 import org.opensearch.neuralsearch.highlight.batch.HighlightContext;
 import org.opensearch.neuralsearch.highlight.batch.config.HighlightConfig;
-import org.opensearch.neuralsearch.highlight.batch.config.HighlightConfigExtractor;
 import org.opensearch.neuralsearch.highlight.batch.config.HighlightContextBuilder;
 import org.opensearch.neuralsearch.highlight.batch.utils.HighlightResultApplier;
-import org.opensearch.neuralsearch.highlight.batch.validation.HighlightValidator;
+import org.opensearch.neuralsearch.highlight.utils.HighlightConfigBuilder;
 import org.opensearch.neuralsearch.ml.MLCommonsClientAccessor;
 import org.opensearch.neuralsearch.processor.highlight.SentenceHighlightingRequest;
 import org.opensearch.neuralsearch.processor.util.ProcessorUtils;
@@ -35,8 +34,6 @@ public class SemanticHighlightingProcessor implements SearchResponseProcessor, S
 
     private final boolean ignoreFailure;
     private final MLCommonsClientAccessor mlClientAccessor;
-    private final HighlightConfigExtractor configExtractor;
-    private final HighlightValidator validator;
     private final HighlightContextBuilder contextBuilder;
     private final String tag;
     private final String description;
@@ -44,8 +41,6 @@ public class SemanticHighlightingProcessor implements SearchResponseProcessor, S
     public SemanticHighlightingProcessor(boolean ignoreFailure, MLCommonsClientAccessor mlClientAccessor) {
         this.ignoreFailure = ignoreFailure;
         this.mlClientAccessor = mlClientAccessor;
-        this.configExtractor = new HighlightConfigExtractor();
-        this.validator = new HighlightValidator();
         this.contextBuilder = new HighlightContextBuilder();
         this.tag = SemanticHighlightingConstants.DEFAULT_PROCESSOR_TAG;
         this.description = SemanticHighlightingConstants.DEFAULT_PROCESSOR_DESCRIPTION;
@@ -61,10 +56,11 @@ public class SemanticHighlightingProcessor implements SearchResponseProcessor, S
         long startTime = System.currentTimeMillis();
 
         try {
-            HighlightConfig config = configExtractor.extract(request, response);
+            // Use unified config builder that includes extraction and validation
+            HighlightConfig config = HighlightConfigBuilder.buildFromSearchRequest(request, response);
 
             if (config.getValidationError() != null) {
-                log.debug("Configuration extraction failed: {}", config.getValidationError());
+                log.debug("Configuration extraction/validation failed: {}", config.getValidationError());
                 responseListener.onResponse(response);
                 return;
             }
@@ -89,11 +85,9 @@ public class SemanticHighlightingProcessor implements SearchResponseProcessor, S
             // Validate batch inference
             String batchValidationError = enrichedConfig.validateBatchInference();
             if (batchValidationError != null) {
-                enrichedConfig = enrichedConfig.withValidationError(batchValidationError);
+                responseListener.onFailure(new IllegalArgumentException(batchValidationError));
+                return;
             }
-
-            // Additional validation
-            enrichedConfig = validator.validate(enrichedConfig, response);
 
             if (!enrichedConfig.isValid()) {
                 responseListener.onFailure(new IllegalArgumentException(enrichedConfig.getValidationError()));

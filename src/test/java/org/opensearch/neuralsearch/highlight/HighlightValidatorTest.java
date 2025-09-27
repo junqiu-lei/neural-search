@@ -5,7 +5,7 @@
 package org.opensearch.neuralsearch.highlight;
 
 import org.opensearch.action.search.SearchResponse;
-import org.opensearch.neuralsearch.highlight.batch.validation.HighlightValidator;
+import org.opensearch.neuralsearch.highlight.utils.HighlightValidator;
 import org.opensearch.neuralsearch.highlight.batch.config.HighlightConfig;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.SearchHits;
@@ -16,13 +16,11 @@ import static org.mockito.Mockito.when;
 
 public class HighlightValidatorTest extends OpenSearchTestCase {
 
-    private HighlightValidator validator;
     private SearchResponse mockResponse;
 
     @Override
     public void setUp() throws Exception {
         super.setUp();
-        validator = new HighlightValidator();
         mockResponse = mock(SearchResponse.class);
     }
 
@@ -33,7 +31,7 @@ public class HighlightValidatorTest extends OpenSearchTestCase {
         when(mockResponse.getHits()).thenReturn(searchHits);
         when(searchHits.getHits()).thenReturn(new SearchHit[] { mock(SearchHit.class) });
 
-        HighlightConfig validated = validator.validate(config, mockResponse);
+        HighlightConfig validated = HighlightValidator.validate(config, mockResponse);
 
         assertTrue(validated.isValid());
         assertNull(validated.getValidationError());
@@ -42,7 +40,7 @@ public class HighlightValidatorTest extends OpenSearchTestCase {
     public void testAlreadyInvalidConfig() {
         HighlightConfig invalidConfig = HighlightConfig.invalid("Already invalid");
 
-        HighlightConfig validated = validator.validate(invalidConfig, mockResponse);
+        HighlightConfig validated = HighlightValidator.validate(invalidConfig, mockResponse);
 
         assertFalse(validated.isValid());
         assertEquals("Already invalid", validated.getValidationError());
@@ -55,7 +53,7 @@ public class HighlightValidatorTest extends OpenSearchTestCase {
         when(mockResponse.getHits()).thenReturn(searchHits);
         when(searchHits.getHits()).thenReturn(new SearchHit[] { mock(SearchHit.class) });
 
-        HighlightConfig validated = validator.validate(config, mockResponse);
+        HighlightConfig validated = HighlightValidator.validate(config, mockResponse);
 
         assertFalse(validated.isValid());
         assertEquals("No semantic highlight field found", validated.getValidationError());
@@ -68,7 +66,7 @@ public class HighlightValidatorTest extends OpenSearchTestCase {
         when(mockResponse.getHits()).thenReturn(searchHits);
         when(searchHits.getHits()).thenReturn(new SearchHit[] { mock(SearchHit.class) });
 
-        HighlightConfig validated = validator.validate(config, mockResponse);
+        HighlightConfig validated = HighlightValidator.validate(config, mockResponse);
 
         assertFalse(validated.isValid());
         assertEquals("Model ID is required for semantic highlighting", validated.getValidationError());
@@ -81,7 +79,7 @@ public class HighlightValidatorTest extends OpenSearchTestCase {
         when(mockResponse.getHits()).thenReturn(searchHits);
         when(searchHits.getHits()).thenReturn(new SearchHit[] { mock(SearchHit.class) });
 
-        HighlightConfig validated = validator.validate(config, mockResponse);
+        HighlightConfig validated = HighlightValidator.validate(config, mockResponse);
 
         assertFalse(validated.isValid());
         assertEquals("Query text is required for semantic highlighting", validated.getValidationError());
@@ -94,7 +92,7 @@ public class HighlightValidatorTest extends OpenSearchTestCase {
         when(mockResponse.getHits()).thenReturn(searchHits);
         when(searchHits.getHits()).thenReturn(new SearchHit[0]);
 
-        HighlightConfig validated = validator.validate(config, mockResponse);
+        HighlightConfig validated = HighlightValidator.validate(config, mockResponse);
 
         assertFalse(validated.isValid());
         assertEquals("No search hits to highlight", validated.getValidationError());
@@ -103,7 +101,7 @@ public class HighlightValidatorTest extends OpenSearchTestCase {
     public void testNullResponse() {
         HighlightConfig config = HighlightConfig.builder().fieldName("content").modelId("test-model").queryText("test query").build();
 
-        HighlightConfig validated = validator.validate(config, null);
+        HighlightConfig validated = HighlightValidator.validate(config, null);
 
         assertFalse(validated.isValid());
         assertEquals("No search hits to highlight", validated.getValidationError());
@@ -122,7 +120,7 @@ public class HighlightValidatorTest extends OpenSearchTestCase {
         when(mockResponse.getHits()).thenReturn(searchHits);
         when(searchHits.getHits()).thenReturn(new SearchHit[] { mock(SearchHit.class) });
 
-        HighlightConfig validated = validator.validate(config, mockResponse);
+        HighlightConfig validated = HighlightValidator.validate(config, mockResponse);
 
         assertFalse(validated.isValid());
         assertEquals("Invalid max batch size: 0", validated.getValidationError());
@@ -141,7 +139,7 @@ public class HighlightValidatorTest extends OpenSearchTestCase {
         when(mockResponse.getHits()).thenReturn(searchHits);
         when(searchHits.getHits()).thenReturn(new SearchHit[] { mock(SearchHit.class) });
 
-        HighlightConfig validated = validator.validate(config, mockResponse);
+        HighlightConfig validated = HighlightValidator.validate(config, mockResponse);
 
         assertTrue(validated.isValid());
         assertNull(validated.getValidationError());

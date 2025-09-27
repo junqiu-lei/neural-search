@@ -12,10 +12,8 @@ import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.neuralsearch.highlight.batch.config.HighlightConfig;
-import org.opensearch.neuralsearch.highlight.batch.config.HighlightConfigExtractor;
 import org.opensearch.neuralsearch.highlight.batch.HighlightContext;
 import org.opensearch.neuralsearch.highlight.batch.config.HighlightContextBuilder;
-import org.opensearch.neuralsearch.highlight.batch.validation.HighlightValidator;
 import org.opensearch.neuralsearch.highlight.batch.processor.SemanticHighlightingProcessor;
 import org.opensearch.neuralsearch.highlight.SemanticHighlightingConstants;
 import org.opensearch.neuralsearch.ml.MLCommonsClientAccessor;
@@ -42,12 +40,6 @@ public class SemanticHighlightingProcessorTests extends OpenSearchTestCase {
 
     @Mock
     private MLCommonsClientAccessor mlClientAccessor;
-
-    @Mock
-    private HighlightConfigExtractor configExtractor;
-
-    @Mock
-    private HighlightValidator validator;
 
     @Mock
     private HighlightContextBuilder contextBuilder;
@@ -355,62 +347,11 @@ public class SemanticHighlightingProcessorTests extends OpenSearchTestCase {
     }
 
     // Testable subclass to inject dependencies
+    // Simple test class - most tests will now use the actual processor
+    // since configuration extraction is now handled by static methods
     private static class TestableSemanticHighlightingProcessor extends SemanticHighlightingProcessor {
-        private final HighlightConfigExtractor configExtractor;
-        private final HighlightValidator validator;
-        private final HighlightContextBuilder contextBuilder;
-
-        public TestableSemanticHighlightingProcessor(
-            boolean ignoreFailure,
-            MLCommonsClientAccessor mlClientAccessor,
-            HighlightConfigExtractor configExtractor,
-            HighlightValidator validator,
-            HighlightContextBuilder contextBuilder
-        ) {
+        public TestableSemanticHighlightingProcessor(boolean ignoreFailure, MLCommonsClientAccessor mlClientAccessor) {
             super(ignoreFailure, mlClientAccessor);
-            this.configExtractor = configExtractor;
-            this.validator = validator;
-            this.contextBuilder = contextBuilder;
-        }
-
-        @Override
-        public void processResponseAsync(
-            SearchRequest request,
-            SearchResponse response,
-            PipelineProcessingContext responseContext,
-            ActionListener<SearchResponse> responseListener
-        ) {
-            long startTime = System.currentTimeMillis();
-
-            try {
-                HighlightConfig config = configExtractor.extract(request, response);
-
-                if (config.getValidationError() != null) {
-                    responseListener.onResponse(response);
-                    return;
-                }
-
-                config = validator.validate(config, response);
-                if (!config.isValid()) {
-                    // Let core handle ignoreFailure - just throw the exception
-                    responseListener.onFailure(new IllegalArgumentException(config.getValidationError()));
-                    return;
-                }
-
-                HighlightContext context = contextBuilder.build(config, response, startTime);
-                if (context.isEmpty()) {
-                    responseListener.onResponse(response);
-                    return;
-                }
-
-                // For testing purposes, we'll just return the response
-                // In real implementation, strategy would be created and executed
-                responseListener.onResponse(response);
-
-            } catch (Exception e) {
-                // Let core handle ignoreFailure - just propagate the exception
-                responseListener.onFailure(e);
-            }
         }
     }
 

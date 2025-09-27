@@ -10,6 +10,7 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.text.Text;
 import org.opensearch.index.mapper.MappedFieldType;
 import org.opensearch.neuralsearch.highlight.single.SemanticHighlighterEngine;
+import org.opensearch.neuralsearch.highlight.utils.HighlightExtractorUtils;
 import org.opensearch.neuralsearch.stats.events.EventStatName;
 import org.opensearch.neuralsearch.stats.events.EventStatsManager;
 import org.opensearch.search.fetch.subphase.highlight.FieldHighlightContext;
@@ -83,10 +84,10 @@ public class SemanticHighlighter implements Highlighter {
         EventStatsManager.increment(EventStatName.SEMANTIC_HIGHLIGHTING_REQUEST_COUNT);
 
         // Extract field text
-        String fieldText = semanticHighlighterEngine.getFieldText(fieldContext);
+        String fieldText = HighlightExtractorUtils.getFieldText(fieldContext);
 
         // Get model ID
-        String modelId = semanticHighlighterEngine.getModelId(fieldContext.field.fieldOptions().options());
+        String modelId = HighlightExtractorUtils.getModelId(fieldContext.field.fieldOptions().options());
 
         // Try to extract query text
         String originalQueryText = semanticHighlighterEngine.extractOriginalQuery(fieldContext.query, fieldContext.fieldName);
@@ -120,6 +121,8 @@ public class SemanticHighlighter implements Highlighter {
     }
 
     private boolean extractBatchInference(Map<String, Object> options) {
+        // Use utility method, but need to create a mock highlighter
+        // For now, keep the logic here since we only have field options, not full highlighter
         if (options != null && options.containsKey("batch_inference")) {
             Object value = options.get("batch_inference");
             if (value instanceof Boolean) {
